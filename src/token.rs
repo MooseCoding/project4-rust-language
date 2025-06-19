@@ -1,0 +1,21 @@
+pub enum Types {
+        TOKEN_ID, TOKEN_EQUALS, TOKEN_STRING, TOKEN_SEMI,
+        TOKEN_LPARENT, TOKEN_RPARENT, TOKEN_COMMA, TOKEN_EOF,
+        TOKEN_LBRACK, TOKEN_RBRACK, TOKEN_COLON, TOKEN_FSLASH,
+        TOKEN_BSLASH, TOKEN_ASTERISK, TOKEN_NUM, TOKEN_BOOL,
+        TOKEN_ADD, TOKEN_SUBTRACT, 
+}
+
+pub struct Token {
+    kind: Types,
+    value: String, 
+}
+
+impl Token {
+    pub fn new(kind: Types, value: impl Into<String>) -> Self {
+        Token{
+            kind, 
+            value,
+        }
+    }
+}
