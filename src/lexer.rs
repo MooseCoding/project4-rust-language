@@ -1,14 +1,15 @@
 use crate::token::{Token, Types};
 
+#[derive(Clone, PartialEq, Debug)]
 pub struct Lexer {
-    current_char: char, 
+    current_char: Option<char>, 
     index: u64, 
     input: Vec<char>,
 }
 
 impl Lexer {
     pub fn new(input: &str) -> Self {
-        let chars: Vec<char> = input.chars().collet();
+        let chars: Vec<char> = input.chars().collect();
         let first = chars.get(0).copied();
 
         Lexer {
@@ -19,9 +20,9 @@ impl Lexer {
     }
 
     pub fn advance(&mut self) {
-        self.index++;
-        if (self.index < self.input.len()) {
-            self.current_char = Some(self.input[self.index]);
+        self.index += 1;
+        if self.index < self.input.len().try_into().unwrap() {
+            self.current_char = Some(self.input[self.index as usize]);
         }
         else {
             self.current_char = None; 
@@ -29,8 +30,8 @@ impl Lexer {
     }
 
     pub fn skip_space(&mut self) {
-        while (let Some(c) = self.current_char) {
-            if (c.is_whitespace) {
+        while let Some(c) = self.current_char {
+            if c.is_whitespace() {
                 self.advance();
             }
             else {
@@ -41,8 +42,8 @@ impl Lexer {
 
     pub fn collect_id(&mut self) -> Token {
         let mut result = String::new();
-        while (let Some(c) = self.current_char) {
-            if(c.is_alphanumeric() || c == '_') {
+        while let Some(c) = self.current_char {
+            if c.is_alphanumeric() || c == '_' {
                 result.push(c);
                 self.advance();
             }
@@ -53,15 +54,15 @@ impl Lexer {
 
         let kind = match result.as_str() {
             "true" | "false" => Types::TOKEN_BOOL,
-            _ => Types::TOKEN_ID
-        }
+            _ => Types::TOKEN_ID,
+        };
 
-        Token::new(kind, result); 
+        Token::new(kind, result)
     }
 
     pub fn collect_num(&mut self) -> Token {
         let mut result = String::new();
-        while (let Some(c) = self.current_char) {
+        while let Some(c) = self.current_char {
             if(c.is_ascii_digit()) {
                 result.push(c);
                 self.advance();
@@ -74,37 +75,52 @@ impl Lexer {
         Token::new(Types::TOKEN_NUM, result)
     }
 
-    pub fn lexer_get_next_token(&mut self) {
+    pub fn next_token(&mut self) -> Token {
         self.skip_space();
 
         match self.current_char {
+            Some('"') => {
+                self.advance() ;
+                let mut string = String::new();
+
+                while let Some(c) = self.current_char {
+                    if c == '"' {
+                        break;
+                    }
+                    string.push(c);
+                    self.advance()
+                }
+
+                self.advance();
+                Token::new(Types::TOKEN_STRING, string)
+            }
             Some('=') => {
                 self.advance();
-                Token::new(Types::TOKEN_EQUALS, "=")
+                Token::new(Types::TOKEN_EQUALS, "=".to_string())
             }
             Some(';') => {
                 self.advance();
-                Token::new(Types::TOKEN_SEMI, ";")
+                Token::new(Types::TOKEN_SEMI, ";".to_string())
             }
             Some('+') => {
                 self.advance();
-                Token::new(Types::TOKEN_ADD, "+")
+                Token::new(Types::TOKEN_ADD, "+".to_string())
             }
             Some('-') => {
                 self.advance();
-                Token::new(Types::TOKEN_SUBTRACT, "-")
+                Token::new(Types::TOKEN_SUBTRACT, "-".to_string())
             }
             Some('*') => {
                 self.advance();
-                Token::new(Types::TOKEN_ASTERISK, "*")
+                Token::new(Types::TOKEN_ASTERISK, "*".to_string())
             }
             Some('(') => {
                 self.advance();
-                Token::new(Types::TOKEN_LPARENT, "(")
+                Token::new(Types::TOKEN_LPARENT, "(".to_string())
             }
             Some(')') => {
                 self.advance();
-                Token::new(Types::TOKEN_RPARENT, ")")
+                Token::new(Types::TOKEN_RPARENT, ")".to_string())
             }
             Some(c) if c.is_ascii_digit() => self.collect_num(),
             Some(c) if c.is_alphabetic() || c == '_' => self.collect_id(),
@@ -113,7 +129,7 @@ impl Lexer {
                 self.advance();
                 Token::new(Types::TOKEN_EOF, c)
             }
-            None => Token::new(Types::TOKEN_EOF, ""),
+            none => Token::new(Types::TOKEN_EOF, "".to_string()),
         }
     }
 }

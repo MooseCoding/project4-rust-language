@@ -1,3 +1,4 @@
+#[derive(Clone, PartialEq, Debug)]
 pub enum Types {
         TOKEN_ID, TOKEN_EQUALS, TOKEN_STRING, TOKEN_SEMI,
         TOKEN_LPARENT, TOKEN_RPARENT, TOKEN_COMMA, TOKEN_EOF,
@@ -6,13 +7,14 @@ pub enum Types {
         TOKEN_ADD, TOKEN_SUBTRACT, 
 }
 
+#[derive(Clone, PartialEq, Debug)]
 pub struct Token {
-    kind: Types,
-    value: String, 
+    pub kind: Types,
+    pub value: String, 
 }
 
 impl Token {
-    pub fn new(kind: Types, value: impl Into<String>) -> Self {
+    pub fn new(kind: Types, value: String) -> Self {
         Token{
             kind, 
             value,

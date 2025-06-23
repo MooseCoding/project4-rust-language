@@ -1,32 +1,19 @@
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals, unused_parens, unused_variables, unused_mut, dead_code)]
 
-mod parser;
-mod scope;
 mod lexer;
+mod token;
+mod parser; 
+mod scope;
 mod ast; 
-mod token; 
 mod visitor; 
-
-use std::env;
-use std::fs;
-
-use lexer::Lexer;
-use parser::Parser;
-use visitor::Visitor; 
+use lexer::Lexer; 
+use parser::Parser; 
 use scope::Scope; 
+use visitor::Visitor; 
 
 pub fn main() {
-    let args: Vec<String> = env::args().collect();
-
-    if args.len() < 2 {
-        panic!("Unexpected input");
-    }
-
-    let n = &args[1];
-    let source = fs::read_to_string(n)
-        .unwrap_or_else(|_| panic!("Could not read the file {}", n));
-
-    let mut lexer = Lexer::new(&source);
+    let source = "int x = 42; println(x);";
+    let mut lexer = Lexer::new(source);
     let mut global_scope = Scope::new(); 
     let mut parser: Parser = Parser::new(&mut lexer, &mut global_scope);
     let mut ast = parser.parse();
