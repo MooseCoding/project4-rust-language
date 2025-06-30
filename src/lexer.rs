@@ -72,7 +72,11 @@ impl Lexer {
             }
         }
 
-        Token::new(Types::TOKEN_NUM, result)
+        if result.contains('.') {
+            return Token::new(Types::TOKEN_FLOAT, result);
+        }
+        
+        Token::new(Types::TOKEN_INT, result)
     }
 
     pub fn next_token(&mut self) -> Token {
@@ -106,6 +110,10 @@ impl Lexer {
                 self.advance();
                 Token::new(Types::TOKEN_ADD, "+".to_string())
             }
+            Some(',') => {
+                self.advance();
+                Token::new(Types::TOKEN_COMMA, ",".to_string())
+            }
             Some('-') => {
                 self.advance();
                 Token::new(Types::TOKEN_SUBTRACT, "-".to_string())
@@ -121,6 +129,14 @@ impl Lexer {
             Some(')') => {
                 self.advance();
                 Token::new(Types::TOKEN_RPARENT, ")".to_string())
+            }
+            Some('{') => {
+                self.advance();
+                Token::new(Types::TOKEN_LBRACK, "{".to_string())
+            }
+            Some('}') => {
+                self.advance();
+                Token::new(Types::TOKEN_RBRACK, "}".to_string())
             }
             Some(c) if c.is_ascii_digit() => self.collect_num(),
             Some(c) if c.is_alphabetic() || c == '_' => self.collect_id(),

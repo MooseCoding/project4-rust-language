@@ -1,2 +1,6 @@
-str x = "Hello World!";
-println(x); 
+fun p(int x, int y) {
+    int z = x + y;
+    println(z);
+}
+
+p(10, 3);

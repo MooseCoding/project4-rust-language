@@ -1,37 +1,37 @@
+use std::rc::Rc;
+use std::cell::RefCell;
+
 use crate::ast::{AST, Ast_Type, Data_Type};
 use crate::lexer::Lexer;
 use crate::token::{Token, Types};
-use crate::scope::Scope;
+use crate::scope::SharedScope;
 
-#[derive(PartialEq, Debug)]
+#[derive(Debug)]
 pub struct Parser<'a> {
     pub lexer: &'a mut Lexer,
     pub current_token: Token,
     pub prev_token: Option<Token>,
-    pub scope: &'a mut Scope,
+    pub scope: SharedScope,
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(lexer: &'a mut Lexer, scope: &'a mut Scope) -> Self {
-        let first_token = lexer.next_token(); 
+    pub fn new(lexer: &'a mut Lexer, scope: SharedScope) -> Self {
+        let f_t = lexer.next_token();
         Parser {
             lexer, 
-            current_token: first_token,
-            prev_token:None, 
-            scope: scope,
+            current_token: f_t,
+            prev_token: None,
+            scope,
         }
     }
 
-    pub fn eat(&mut self, token_type: Types) {
-        if self.current_token.kind == token_type  {
+    pub fn eat(&mut self, t: Types) {
+        if self.current_token.kind == t {
             self.prev_token = Some(self.current_token.clone());
             self.current_token = self.lexer.next_token();
         }
         else {
-            panic!(
-                "Unexpected Parsed Token: {:?}, got {:?}",
-                token_type, self.current_token.kind
-            );
+            panic!("Unexpected token parser {:?} got {:?}", t, self.current_token.kind);
         }
     }
 
@@ -40,34 +40,29 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_statements(&mut self) -> AST {
-        let mut compound = AST::new(Ast_Type::AST_COMPOUND);
-        compound.scope = Some(Box::new(self.scope.clone()));
-        compound.compound_value = Some(Vec::new());
+        let mut comp = AST::new(Ast_Type::AST_COMPOUND);
+        comp.scope = Some(self.scope.clone());
+        comp.compound_value = Some(Vec::new());
+        
+        while self.current_token.kind != Types::TOKEN_EOF {
+            let ast_state = self.parse_statement();
 
-        let ast_statement = self.parse_statement();
-        if let Some(ref mut v) =  compound.compound_value {
-            v.push(ast_statement);
-        }
+            if let Some(ref mut v) = comp.compound_value {
+                v.push(ast_state);
+            }
 
-        while(self.current_token.kind == Types::TOKEN_SEMI) {
-            self.eat(Types::TOKEN_SEMI); 
-            let next = self.parse_statement();
-            if let Some(ref mut v) = compound.compound_value {
-                v.push(next); 
+            if self.current_token.kind == Types::TOKEN_SEMI {
+                self.eat(Types::TOKEN_SEMI);
             }
         }
 
-        compound 
+        comp
     }
 
     pub fn parse_statement(&mut self) -> AST {
         match self.current_token.kind {
             Types::TOKEN_ID => self.parse_id(),
-            Types::TOKEN_ASTERISK => self.parse_factor(),
-            Types::TOKEN_ADD => self.parse_term(),
-            Types::TOKEN_FSLASH => self.parse_factor(),
-            Types::TOKEN_SUBTRACT => self.parse_term(),
-            _ => AST::new(Ast_Type::AST_NOOP),
+            _ => self.parse_expr(),
         }
     }
 
@@ -75,150 +70,237 @@ impl<'a> Parser<'a> {
         match self.current_token.kind {
             Types::TOKEN_STRING => self.parse_string(),
             Types::TOKEN_ID => self.parse_id(),
-            Types::TOKEN_NUM => self.parse_num(),
+            Types::TOKEN_FLOAT => self.parse_float(),
+            Types::TOKEN_INT => self.parse_integer(),
             Types::TOKEN_BOOL => self.parse_bool(),
-            Types::TOKEN_ADD => self.parse_term(),
-            Types::TOKEN_ASTERISK => self.parse_factor(),
-            Types::TOKEN_FSLASH => self.parse_factor(),
-            _ => AST::new(Ast_Type::AST_NOOP),
+            Types::TOKEN_SUBTRACT => {
+                self.eat(Types::TOKEN_SUBTRACT);
+
+                match self.current_token.kind {
+                    Types::TOKEN_INT => {
+                        let mut ast = self.parse_integer();
+                        ast.int_value = Some(-ast.int_value.unwrap());
+                        ast
+                    }
+                    Types::TOKEN_FLOAT => {
+                        let mut ast = self.parse_float();
+                        ast.float_value = Some(-ast.float_value.unwrap());
+                        ast
+                    }
+                    Types::TOKEN_ID => {
+                        let mut ast = self.parse_id();
+                        let evaluated = self.eval_ast(ast.clone());
+
+                        match evaluated.ast_type {
+                            Ast_Type::AST_INT => {
+                                let mut node = AST::new(Ast_Type::AST_INT);
+                                node.int_value = Some(-evaluated.int_value.unwrap());
+                                node.int_init = Some(true);
+                                node.data_type = Data_Type::INT;
+                                node.scope = Some(self.scope.clone());
+                                node
+                            }
+                            Ast_Type::AST_FLOAT => {
+                                let mut node = AST::new(Ast_Type::AST_FLOAT);
+                                node.float_value = Some(-evaluated.float_value.unwrap());
+                                node.float_init = Some(true);
+                                node.data_type = Data_Type::FLOAT;
+                                node.scope = Some(self.scope.clone());
+                                node
+                            }
+                            _ => panic!("Cannot negate non-numeric type"),
+                        }
+                    }
+                    _ => panic!("Unexpected token after unary minus: {:?}", self.current_token),
+                }
+            }
+            _ => self.parse_term(),
         }
     }
 
-    pub fn parse_function_definition(&mut self) -> AST {
-        let mut ast = AST::new(Ast_Type::AST_FUNCTION_DEF);
-
-        self.eat(Types::TOKEN_ID); // Keyword eating
-
-        let name = self.current_token.value.clone();
-        ast.function_definition_name = Some(name.clone());
-        self.eat(Types::TOKEN_ID);
-
-        self.eat(Types::TOKEN_LPARENT);
-
-        let mut args = vec![];
-
-        while self.current_token.kind != Types::TOKEN_RPARENT {
-            let t = match self.current_token.value.as_str() {
-                "str" => Data_Type::STR,
-                "int" => Data_Type::INT,
-                "float" => Data_Type::FLOAT,
-                "bool" => Data_Type::BOOL,
-                _ => panic!("Incorrect type for function {}", name),
-            };
-
-            self.eat(Types::TOKEN_ID);
-
-            let n = self.current_token.value.clone();
-            self.eat(Types::TOKEN_ID);
-
-            let mut arg = AST::new(Ast_Type::AST_VARIABLE_DEF);
-            arg.variable_definition_variable_name = Some(n);
-            arg.variable_type = Some(t);
-
-            args.push(arg);
-
-            if self.current_token.kind == Types::TOKEN_COMMA {
-                self.eat(Types::TOKEN_COMMA);
-            }
-            else {
-                break; 
-            }
+    pub fn parse_id(&mut self) -> AST {
+        match self.current_token.value.as_str() {
+            "int" | "str" | "bool" | "float" => self.parse_variable_definition(),
+            "fun" => self.parse_function_definition(),
+            _ => self.parse_variable(),
         }
+    }
 
-        for arg in &args {
-            self.scope.add_variable_definition(arg.clone());
-        }
+    pub fn parse_integer(&mut self) -> AST {
+        let t = self.current_token.clone();
+        let mut ast = AST::new(Ast_Type::AST_INT);
 
-        self.eat(Types::TOKEN_RPARENT);
-        self.eat(Types::TOKEN_LBRACK);
-
-        ast.function_definition_body = Some(Box::new(self.parse_statement()));
-        self.eat(Types::TOKEN_RBRACK);
-
-        ast.function_definition_args = Some(args);
-        ast.scope = Some(Box::new(self.scope.clone()));
+        ast.int_value = Some(t.value.parse::<i32>().unwrap_or_else(|_| panic!("invalid integer {:#?}", t.value)));
+        ast.int_init = Some(true);
+        ast.data_type = Data_Type::INT;
+        ast.scope = Some(self.scope.clone());
+        self.eat(Types::TOKEN_INT);
         ast
     }
 
-    pub fn parse_function_call(&mut self) -> AST {
-        let mut ast = AST::new(Ast_Type::AST_FUNCTION_CALL);
-        ast.function_call_name = Some(self.prev_token.as_ref().unwrap().value.clone());
+    pub fn parse_float(&mut self) -> AST {
+        let t = self.current_token.clone();
+        let mut ast = AST::new(Ast_Type::AST_FLOAT);
 
-        self.eat(Types::TOKEN_LPARENT);
-
-        let mut args = vec![self.parse_expr()];
-
-        while self.current_token.kind == Types::TOKEN_COMMA {
-            self.eat(Types::TOKEN_COMMA);
-            args.push(self.parse_expr());
-        }
-
-        if matches!(self.current_token.kind, Types::TOKEN_ADD | Types::TOKEN_SUBTRACT) {
-            args[0] = self.parse_expr();
-            while self.current_token.kind == Types::TOKEN_ADD {
-                args.push(self.parse_expr());
-            }
-        } else if matches!(self.current_token.kind, Types::TOKEN_ASTERISK | Types::TOKEN_FSLASH) {
-            args[0] = self.parse_expr();
-            while self.current_token.kind == Types::TOKEN_ASTERISK {
-                args.push(self.parse_expr());
-            }
-        }
-
-        self.eat(Types::TOKEN_RPARENT);
-        ast.function_call_args = Some(args);
-        ast.scope = Some(Box::new(self.scope.clone()));
-        ast 
+        ast.float_value = Some(t.value.parse::<f64>().unwrap_or_else(|_| panic!("invalid float {:#?}", t.value)));
+        ast.float_init = Some(true);
+        ast.data_type = Data_Type::FLOAT;
+        ast.past_decimal = Some(t.value.split('.').nth(1).map_or(0, |s| s.len() as i32));
+        ast.scope = Some(self.scope.clone());
+        self.eat(Types::TOKEN_FLOAT);
+        ast
     }
 
-    pub fn parse_variable_definition(&mut self) -> AST {
-        let t = match self.current_token.value.as_str() {
-            "str" => Data_Type::STR,
-            "int" => Data_Type::INT,
-            "bool" => Data_Type::BOOL,
-            _ => Data_Type::FLOAT
-        };
+    pub fn parse_bool(&mut self) -> AST {
+        let mut ast = AST::new(Ast_Type::AST_BOOL);
+        ast.bool_value = Some(self.current_token.value != "false");
+        ast.bool_init = Some(true);
+        ast.scope = Some(self.scope.clone());
+        self.eat(Types::TOKEN_BOOL);
+        ast
+    }
 
-        self.eat(Types::TOKEN_ID);
-        let n = self.current_token.value.clone();
-        self.eat(Types::TOKEN_ID);
-        self.eat(Types::TOKEN_EQUALS);
+    pub fn parse_string(&mut self) -> AST {
+        let mut ast = AST::new(Ast_Type::AST_STRING);
+        ast.string_value = Some(self.current_token.value.clone());
+        ast.scope = Some(self.scope.clone());
+        self.eat(Types::TOKEN_STRING);
+        ast
+    }
 
-        let val = self.parse_expr();
-        let mut def = AST::new(Ast_Type::AST_VARIABLE_DEF);
+    pub fn parse_term(&mut self) -> AST {
+        self.parse_addition()
+    }
 
-        def.variable_definition_variable_name = Some(n);
-        def.variable_definition_value = Some(Box::new(val.clone()));
-        def.scope = Some(Box::new(self.scope.clone()));
+    pub fn parse_addition(&mut self) -> AST {
+        let mut left = self.parse_multiplication();
 
-        def.variable_type = Some(if val.float_init.unwrap_or(false) {
-            Data_Type::FLOAT 
-        } else if val.string_value.is_some() {
-            Data_Type::STR 
-        }
-        else if val.int_init.unwrap_or(false) {
-            Data_Type::INT 
-        }
-        else if val.bool_init.unwrap_or(false) {
-            Data_Type::BOOL
-        }
-        else {
-            Data_Type::VOID
-        }
-        );
+        while matches!(self.current_token.kind, Types::TOKEN_ADD | Types::TOKEN_SUBTRACT) {
+            let op = self.current_token.kind.clone();
+            self.eat(op.clone());
 
-        if def.variable_type != Some(t) {
-            panic!("Variabe {:#?} is not the type that you assigned it",
-                def.variable_definition_variable_name.unwrap() 
-            )
+            let right = self.parse_multiplication();
+
+            left = self.combine_ast(left, op, right);
         }
 
-        self.scope.add_variable_definition(def.clone());
-        def 
+        left
+    }
+
+    pub fn parse_multiplication(&mut self) -> AST {
+        let mut left = self.parse_factor();
+
+        while matches!(self.current_token.kind, Types::TOKEN_ASTERISK | Types::TOKEN_FSLASH) {
+            let op = self.current_token.kind.clone();
+            self.eat(op.clone());
+
+            let right = self.parse_factor();
+
+            left = self.combine_ast(left, op, right);
+        }
+
+        left
+    }
+
+    pub fn combine_ast(&mut self, left:AST, op:Types, right:AST) -> AST {
+        let mut node = AST::new(Ast_Type::AST_BINARY);
+        node.left=Some(Box::new(left));
+        node.right = Some(Box::new(right));
+        node.operator = Some(op);
+        node.scope = Some(self.scope.clone());
+        node
+    }
+
+    pub fn parse_factor(&mut self) -> AST {
+        match self.current_token.kind {
+            Types::TOKEN_FLOAT => self.parse_float(),
+            Types::TOKEN_INT => self.parse_integer(),
+            Types::TOKEN_ID => self.parse_variable(),
+            Types::TOKEN_LPARENT => {
+                self.eat(Types::TOKEN_LPARENT);
+                let expr = self.parse_expr();
+                self.eat(Types::TOKEN_RPARENT);
+                expr
+            }
+            Types::TOKEN_SUBTRACT => {
+                self.eat(Types::TOKEN_SUBTRACT);
+
+                match self.current_token.kind {
+                    Types::TOKEN_INT => {
+                        let mut ast = self.parse_integer();
+                        ast.int_value = Some(-ast.int_value.unwrap());
+                        ast
+                    }
+                    Types::TOKEN_FLOAT => {
+                        let mut ast = self.parse_float();
+                        ast.float_value = Some(-ast.float_value.unwrap());
+                        ast
+                    }
+                    Types::TOKEN_ID => {
+                        let mut ast = self.parse_id();
+                        let evaluated = self.eval_ast(ast.clone());
+
+                        match evaluated.ast_type {
+                            Ast_Type::AST_INT => {
+                                let mut node = AST::new(Ast_Type::AST_INT);
+                                node.int_value = Some(-evaluated.int_value.unwrap());
+                                node.int_init = Some(true);
+                                node.data_type = Data_Type::INT;
+                                node.scope = Some(self.scope.clone());
+                                node
+                            }
+                            Ast_Type::AST_FLOAT => {
+                                let mut node = AST::new(Ast_Type::AST_FLOAT);
+                                node.float_value = Some(-evaluated.float_value.unwrap());
+                                node.float_init = Some(true);
+                                node.data_type = Data_Type::FLOAT;
+                                node.scope = Some(self.scope.clone());
+                                node
+                            }
+                            _ => panic!("Cannot negate non-numeric type"),
+                        }
+                    }
+                    _ => panic!("Unexpected token after unary minus: {:?}", self.current_token),
+                }
+            }
+            Types::TOKEN_STRING => self.parse_string(),
+            _ => panic!("Unexpected token in factor {:?}", self.current_token.clone()),
+        }
+    }
+
+    pub fn eval_ast(&mut self, ast: AST) -> AST {
+        match ast.ast_type {
+            Ast_Type::AST_INT | Ast_Type::AST_FLOAT => ast,
+            Ast_Type::AST_VARIABLE_DEF => {
+                if let Some(inner) = ast.variable_definition_value {
+                    self.eval_ast(*inner)
+                } else {
+                    ast
+                }
+            }
+            Ast_Type::AST_VARIABLE => {
+                let name = ast.variable_name.clone().unwrap().trim_matches('"').to_string();
+
+                let scope_rc = ast.scope.clone().expect("AST_VARIABLE missing scope");
+
+                let maybe_val = {
+                    let scope_ref = scope_rc.borrow();
+                    scope_ref.get_variable_definition(&name)
+                        .and_then(|def| def.variable_definition_value.clone())
+                };
+
+                if let Some(inner_ast) = maybe_val {
+                    self.eval_ast(*inner_ast)
+                } else {
+                    ast
+                }
+            }
+            _ => ast,
+        }
     }
 
     pub fn parse_variable(&mut self) -> AST {
-        let t = self.current_token.value.clone();
+        let n = self.current_token.value.clone();
 
         self.eat(Types::TOKEN_ID);
 
@@ -226,427 +308,173 @@ impl<'a> Parser<'a> {
             return self.parse_function_call();
         }
 
-        if self.current_token.kind == Types::TOKEN_ADD {
-            return self.parse_term();
-        }
-
         let mut ast = AST::new(Ast_Type::AST_VARIABLE);
-        ast.variable_name = Some(t);
-        ast.scope = Some(Box::new(self.scope.clone()));
-        ast 
-    }
-
-    pub fn parse_id(&mut self) -> AST {
-        match self.current_token.value.as_str() {
-            "int" | "str" | "bool" | "float" => self.parse_variable_definition(),
-            "fun" => self.parse_function_definition(),
-            _ => self.parse_variable()
-        }
-    }
-
-    pub fn parse_num(&mut self) -> AST {
-        let mut ast = AST::new(Ast_Type::AST_NOOP);
-
-        if self.current_token.value.contains('.') {
-            ast.past_decimal = Some(self.current_token.value.split('.').nth(1).unwrap().len() as i32);
-            ast.ast_type = Ast_Type::AST_FLOAT;
-            ast.data_type = Data_Type::FLOAT; 
-            ast.float_value = Some(self.current_token.value.parse().unwrap());
-            ast.float_init = Some(true);
-        }
-        else {
-            ast.ast_type = Ast_Type::AST_INT;
-            ast.data_type = Data_Type::INT;
-            ast.int_value = Some(self.current_token.value.parse().unwrap());
-            ast.int_init = Some(true); 
-        }
-
-        self.eat(Types::TOKEN_NUM);
-
-        match self.current_token.kind {
-            Types::TOKEN_ADD => self.parse_term(),
-            Types::TOKEN_ASTERISK | Types::TOKEN_FSLASH => self.parse_factor(),
-            _ => {
-                ast.scope = Some(Box::new(self.scope.clone())); 
-                return ast; 
-            },
-        };
-
-        ast 
-    }
-
-    pub fn parse_bool(&mut self) -> AST {
-        let mut ast = AST::new(Ast_Type::AST_BOOL);
-        ast.bool_value = Some(self.current_token.value != "false");
-        ast.bool_init = Some(true);
-        self.eat(Types::TOKEN_BOOL);
-
-        if self.current_token.kind == Types::TOKEN_ADD {
-            return self.parse_term();
-        }
-
-        ast.scope = Some(Box::new(self.scope.clone()));
+        ast.variable_name = Some(n);
+        ast.scope = Some(self.scope.clone());
         ast
     }
 
-    pub fn parse_string(&mut self) -> AST {
-        let mut ast = AST::new(Ast_Type::AST_STRING);
-        ast.string_value = Some(self.current_token.value.clone());
-        self.eat(Types::TOKEN_STRING);
+    pub fn parse_variable_definition(&mut self) -> AST {
+        let t = match self.current_token.value.as_str() {
+            "str" => Data_Type::STR,
+            "int" => Data_Type::INT,
+            "bool" => Data_Type::BOOL,
+            _ => Data_Type::FLOAT,
+        };
 
-        if self.current_token.kind == Types::TOKEN_ADD {
-            return self.parse_term();
-        }
+        self.eat(Types::TOKEN_ID);
+        let n = self.current_token.value.clone();
+        self.eat(Types::TOKEN_ID);
+        self.eat(Types::TOKEN_EQUALS);
 
-        ast.scope = Some(Box::new(self.scope.clone()));
-        ast 
-    }
+        let val = self.parse_term();
+        let evaluated = self.eval_ast(val.clone());
 
-    pub fn parse_factor(&mut self) -> AST {
-        let mut past_dec = 0;
-        let mut lpd = 0;
-        let mut return_value = 1.0;
-        let mut can_break = false;
-
-        let mut var = self.scope
-            .get_variable_definition(&self.prev_token.as_ref().unwrap().value)
-            .cloned()
-            .unwrap_or_else(|| AST::new(Ast_Type::AST_NOOP));
-
-        if self.current_token.kind == Types::TOKEN_ASTERISK {
-            while (self.prev_token.as_ref().unwrap().value.parse::<f64>().is_ok()
-                || var.int_init.unwrap_or(false)
-                || var.float_init.unwrap_or(false)
-            ) {
-                let currentN = if let Ok(n) = self.prev_token.as_ref().unwrap().value.parse::<f64>() {
-                    n 
-                } 
-                else if var.int_init.unwrap_or(false) {
-                    var.int_value.unwrap_or(0) as f64
-                }
-                else {
-                    var.float_value.unwrap_or(1.0)
-                };
-
-                if matches!(
-                    self.current_token.kind,
-                    Types::TOKEN_RPARENT | Types::TOKEN_SEMI
-                ) {
-                    can_break = true; 
-                }
-
-                if self.prev_token.as_ref().unwrap().value.contains('.') {
-                    past_dec = self.prev_token.as_ref().unwrap().value.split('.').nth(1).unwrap().len() as i32;
-                }
-
-                if self.current_token.kind == Types::TOKEN_ASTERISK {
-                    self.eat(Types::TOKEN_ASTERISK);
-                    self.eat(self.current_token.kind.clone());
-                }
-
-                if let Some(nV) = self.scope.get_variable_definition(&self.prev_token.as_ref().unwrap().value) {
-                    var = nV.clone();
-                } 
-
-                return_value *= currentN;
-
-                if past_dec > lpd {
-                    lpd = past_dec;
-                }
-
-                if can_break {
-                    if let Some(_) = var.variable_definition_value {
-                        var.float_init = Some(false);
-                        var.int_init = Some(false); 
-                    }
-                    break; 
-                }
-            }
-
-            let mut ast = if lpd != 0 {
-                let mut ast = AST::new(Ast_Type::AST_FLOAT);
-                ast.float_value = Some(return_value);
-                ast.past_decimal = Some(lpd);
-                ast.float_init = Some(true);
-                ast 
-            } else {
-                let mut ast = AST::new(Ast_Type::AST_INT);
-                ast.int_value = Some(return_value as i32);
-                ast.int_init = Some(true);
-                ast
-            };
-
-            return ast; 
-        }
-
-        if var.int_init.unwrap_or(false) {
-            return_value = var.int_value.unwrap_or(0) as f64;
-        }
-        else if var.float_init.unwrap_or(false) {
-            return_value = var.float_value.unwrap_or(1.0);
-        }
-        else if let Ok(n) = self.prev_token.as_ref().unwrap().value.parse::<f64>() {
-            return_value = n; 
-        }
-
-        while self.prev_token.as_ref().unwrap().value.parse::<f64>().is_ok()
-            || var.int_init.unwrap_or(false)
-            || var.float_init.unwrap_or(false)
-        {
-            let currentN = if let Ok(n) = self.prev_token.as_ref().unwrap().value.parse::<f64>() {
-                n
-            } else if var.int_init.unwrap_or(false) {
-                var.int_value.unwrap_or(0) as f64
-            }
-            else {
-                var.float_value.unwrap_or(1.0)
-            };
-
-            if matches!(
-                self.current_token.kind,
-                Types::TOKEN_RPARENT | Types::TOKEN_SEMI
-            ) {
-                can_break = true;
-            }
-
-            if self.prev_token.as_ref().unwrap().value.contains('.') {
-                past_dec = self.prev_token.as_ref().unwrap().value.split('.').nth(1).unwrap().len() as i32;
-            }
-            if self.current_token.kind == Types::TOKEN_FSLASH {
-                self.eat(Types::TOKEN_FSLASH);
-                self.eat(self.current_token.kind.clone());
-            }
-
-            if let Some(new_var) = self.scope.get_variable_definition(&self.prev_token.as_ref().unwrap().value) {
-                var = new_var.clone();
-            }
-
-            return_value /= currentN;
-
-            if past_dec > lpd {
-                lpd = past_dec;
-            }
-
-            if can_break {
-                if let Some(_) = var.variable_definition_value {
-                    var.float_init = Some(false);
-                    var.int_init = Some(false);
-                }
-                break;
-            }
-        }
-
-        if return_value < 1.0 {
-            lpd += 1;
-        }
-
-        let mut ast = if lpd != 0 {
-            let mut ast = AST::new(Ast_Type::AST_FLOAT);
-            ast.float_value = Some(return_value);
-            ast.past_decimal = Some(lpd);
-            ast.float_init = Some(true);
-            ast
+        let inferred_type = if evaluated.float_init.unwrap_or(false) {
+            Data_Type::FLOAT
+        } else if evaluated.string_value.is_some() {
+            Data_Type::STR
+        } else if evaluated.int_init.unwrap_or(false) {
+            Data_Type::INT
+        } else if evaluated.bool_init.unwrap_or(false) {
+            Data_Type::BOOL
         } else {
-            let mut ast = AST::new(Ast_Type::AST_INT);
-            ast.int_value = Some(return_value as i32);
-            ast.int_init = Some(true);
-            ast
+            t.clone()
         };
-        ast
-    }
-    
 
-    pub fn parse_term(&mut self) -> AST {
-        let mut return_value = String::new();
-        let mut return_value_size = 0;
-        let mut past_decimal = 0;
-        let mut lpd = 0;
-        let mut sum = 0.0;
-        let mut r_type = 0;
-        let mut can_break = false;
+        let mut val = val;
+        val.data_type = inferred_type.clone();
 
-        let mut var = self.scope
-            .get_variable_definition(&self.prev_token.as_ref().unwrap().value)
-            .cloned()
-            .unwrap_or_else(|| AST::new(Ast_Type::AST_NOOP));
+        let mut def = AST::new(Ast_Type::AST_VARIABLE_DEF);
+        def.variable_definition_variable_name = Some(n.clone());
+        def.variable_definition_value = Some(Box::new(val.clone()));
+        def.scope = Some(self.scope.clone());
+        def.variable_type = Some(inferred_type.clone());
 
-        if self.current_token.kind == Types::TOKEN_SUBTRACT {
-            sum = if let Some(val) = var.int_value {
-                val as f64
-            } else if let Some(val) = var.float_value {
-                val
-            } else {
-                self.prev_token.as_ref().unwrap().value.parse().unwrap_or(0.0)
-            };
-
-            while self.prev_token.as_ref().unwrap().value.parse::<f64>().is_ok()
-                || var.int_init.unwrap_or(false)
-                || var.float_init.unwrap_or(false)
-            {
-                let current_n = if let Ok(n) = self.prev_token.as_ref().unwrap().value.parse::<f64>() {
-                    n
-                } else if var.int_init.unwrap_or(false) {
-                    var.int_value.unwrap_or(0) as f64
-                } else {
-                    var.float_value.unwrap_or(1.0)
-                };
-
-                if matches!(
-                    self.current_token.kind,
-                    Types::TOKEN_RPARENT | Types::TOKEN_SEMI
-                ) {
-                    can_break = true;
-                }
-
-                if self.prev_token.as_ref().unwrap().value.contains('.') {
-                    past_decimal = self.prev_token.as_ref().unwrap().value.split('.').nth(1).unwrap().len() as i32;
-                }
-
-                if self.current_token.kind == Types::TOKEN_SUBTRACT {
-                    self.eat(Types::TOKEN_SUBTRACT);
-                    self.eat(self.current_token.kind.clone());
-                }
-
-                if let Some(new_var) = self.scope.get_variable_definition(&self.prev_token.as_ref().unwrap().value) {
-                    var = new_var.clone();
-                }
-
-                sum -= current_n;
-
-                if past_decimal > lpd || var.past_decimal.unwrap_or(0) > lpd {
-                    lpd = past_decimal;
-                }
-
-                if can_break {
-                    var.int_init = Some(false);
-                    var.float_init = Some(false);
-                    break;
-                }
-            }
-
-            return if lpd != 0 {
-                let mut ast = AST::new(Ast_Type::AST_FLOAT);
-                ast.float_value = Some(sum);
-                ast.past_decimal = Some(lpd);
-                ast.float_init = Some(true);
-                ast
-            } else {
-                let mut ast = AST::new(Ast_Type::AST_INT);
-                ast.int_value = Some(sum as i32);
-                ast.int_init = Some(true);
-                ast
-            };
+        if def.variable_type != Some(t.clone()) {
+            panic!(
+                "Variable {:?} is not the type {:?} that you assigned it, instead it's {:?}",
+                def.variable_definition_variable_name.clone().unwrap(),
+                t,
+                def.variable_type.unwrap()
+            );
         }
 
-        while self.prev_token.as_ref().unwrap().value.parse::<f64>().is_ok()
-            || var.int_init.unwrap_or(false)
-            || var.float_init.unwrap_or(false)
-        {
-            let current_n = if let Ok(n) = self.prev_token.as_ref().unwrap().value.parse::<f64>() {
-                n
-            } else if var.int_init.unwrap_or(false) {
-                var.int_value.unwrap_or(0) as f64
-            } else {
-                var.float_value.unwrap_or(1.0)
+        //self.scope.borrow_mut().add_variable_definition(def.clone());
+        def
+    }
+
+    pub fn parse_function_call(&mut self) -> AST {
+        let mut ast = AST::new(Ast_Type::AST_FUNCTION_CALL);
+        ast.function_call_name = Some(self.prev_token.as_ref().unwrap().value.clone());
+        self.eat(Types::TOKEN_LPARENT);
+        let mut args = Vec::new();
+
+        if self.current_token.kind != Types::TOKEN_RPARENT {
+            args.push(self.parse_term());
+
+            while self.current_token.kind == Types::TOKEN_COMMA {
+                self.eat(Types::TOKEN_COMMA);
+                args.push(self.parse_term());
+            }
+        }
+
+        self.eat(Types::TOKEN_RPARENT);
+        ast.function_call_args = Some(args);
+        ast.scope = Some(self.scope.clone());
+        ast
+    }
+
+    pub fn parse_function_definition(&mut self) -> AST {
+        let mut ast = AST::new(Ast_Type::AST_FUNCTION_DEF);
+
+        self.eat(Types::TOKEN_ID);
+
+        let n = self.current_token.value.clone();
+        ast.function_definition_name = Some(n.clone());
+
+        self.eat(Types::TOKEN_ID);
+        self.eat(Types::TOKEN_LPARENT);
+
+        let mut args = vec![];
+
+        let func_scope = Rc::new(RefCell::new(crate::scope::Scope::new_with_parent(self.scope.clone())));
+
+        while self.current_token.kind != Types::TOKEN_RPARENT {
+            let t = match self.current_token.value.as_str() {
+                "str" => Data_Type::STR,
+                "int" => Data_Type::INT,
+                "float" => Data_Type::FLOAT,
+                "bool" => Data_Type::BOOL,
+                _ => panic!("Incorrect type for function {}", n),
             };
 
-            if matches!(
-                self.current_token.kind,
-                Types::TOKEN_RPARENT | Types::TOKEN_SEMI
-            ) {
-                can_break = true;
-            }
+            self.eat(Types::TOKEN_ID);
 
-            if self.prev_token.as_ref().unwrap().value.contains('.') {
-                past_decimal = self.prev_token.as_ref().unwrap().value.split('.').nth(1).unwrap().len() as i32;
-            }
+            let n2 = self.current_token.value.clone();
+            
+            self.eat(Types::TOKEN_ID);
 
-            if self.current_token.kind == Types::TOKEN_ADD {
-                self.eat(Types::TOKEN_ADD);
-                self.eat(self.current_token.kind.clone());
-            }
 
-            if let Some(new_var) = self.scope.get_variable_definition(&self.prev_token.as_ref().unwrap().value) {
-                var = new_var.clone();
-            }
+            let mut arg = AST::new(Ast_Type::AST_VARIABLE_DEF);
+            arg.variable_definition_variable_name = Some(n2);
+            arg.variable_type = Some(t);
+            arg.scope = Some(func_scope.clone()); 
 
-            sum += current_n;
+            func_scope.borrow_mut().add_variable_definition(arg.clone());
+            
+            args.push(arg);
 
-            if past_decimal > lpd || var.past_decimal.unwrap_or(0) > lpd {
-                lpd = past_decimal;
-            }
-
-            let str_value = format!("{:.l$}", current_n, l = past_decimal as usize);
-            return_value.push_str(&str_value);
-            return_value_size += str_value.len();
-
-            if can_break {
-                var.int_init = Some(false);
-                var.float_init = Some(false);
+            if self.current_token.kind == Types::TOKEN_COMMA {
+                self.eat(Types::TOKEN_COMMA);
+            } else {
                 break;
             }
         }
 
-        while matches!(
-            self.prev_token.as_ref().unwrap().kind,
-            Types::TOKEN_STRING | Types::TOKEN_BOOL
-        ) || var.string_value.is_some()
-            || var.bool_init.unwrap_or(false)
-        {
-            let mut fragment = String::new();
-            if let Some(new_var) = self.scope.get_variable_definition(&self.prev_token.as_ref().unwrap().value) {
-                var = new_var.clone();
-                if let Some(s) = &var.string_value {
-                    fragment = s.clone();
-                } else if let Some(b) = var.bool_value {
-                    fragment = if b { "true" } else { "false" }.to_string();
-                }
-            } else {
-                fragment = self.prev_token.as_ref().unwrap().value.clone();
-            }
+        self.eat(Types::TOKEN_RPARENT);
+        self.eat(Types::TOKEN_LBRACK);
 
-            return_value.push_str(&fragment);
-            return_value_size += fragment.len();
+        let mut temp_parser = Parser {
+            lexer: self.lexer,
+            current_token: self.current_token.clone(),
+            prev_token: self.prev_token.clone(),
+           
+            scope: func_scope.clone(),
+        };
 
-            if matches!(
-                self.current_token.kind,
-                Types::TOKEN_RPARENT | Types::TOKEN_SEMI
-            ) {
-                break;
-            }
+        ast.function_definition_body = Some(Box::new(temp_parser.parse_function_body()));
 
-            if self.current_token.kind == Types::TOKEN_ADD {
-                self.eat(Types::TOKEN_ADD);
-                self.eat(self.current_token.kind.clone());
-            }
+        self.current_token = temp_parser.current_token;
+        self.prev_token = temp_parser.prev_token;
 
-            if let Some(new_var) = self.scope.get_variable_definition(&self.prev_token.as_ref().unwrap().value) {
-                var = new_var.clone();
-            } else {
-                var = AST::new(Ast_Type::AST_NOOP);
-            }
+        self.eat(Types::TOKEN_RBRACK);
 
-            r_type = 1;
-        }
+        ast.scope = Some(func_scope.clone());
+        ast.function_definition_args = Some(args);
 
-        if r_type == 1 {
-            let mut ast = AST::new(Ast_Type::AST_STRING);
-            ast.string_value = Some(return_value);
-            return ast;
-        }
+        self.scope.borrow_mut().add_function_definition(ast.clone());
 
-        if lpd != 0 {
-            let mut ast = AST::new(Ast_Type::AST_FLOAT);
-            ast.float_value = Some(sum);
-            ast.past_decimal = Some(lpd);
-            ast.float_init = Some(true);
-            return ast;
-        }
-
-        let mut ast = AST::new(Ast_Type::AST_INT);
-        ast.int_value = Some(sum as i32);
-        ast.int_init = Some(true);
         ast
     }
 
+    fn parse_function_body(&mut self) -> AST {
+        let mut comp = AST::new(Ast_Type::AST_COMPOUND);
+        comp.scope = Some(self.scope.clone());
+        comp.compound_value = Some(Vec::new());
+        
+        while self.current_token.kind != Types::TOKEN_RBRACK {
+            let ast_state = self.parse_statement();
+
+            if let Some(ref mut v) = comp.compound_value {
+                v.push(ast_state);
+            }
+
+            if self.current_token.kind == Types::TOKEN_SEMI {
+                self.eat(Types::TOKEN_SEMI);
+            }
+        }
+
+        comp
+    }
 }

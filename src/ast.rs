@@ -1,4 +1,5 @@
-use crate::scope::Scope; 
+use crate::scope::{SharedScope};
+use crate::token::{Types};
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Ast_Type {
@@ -12,11 +13,12 @@ pub enum Ast_Type {
     AST_INT,
     AST_BOOL,
     AST_NOOP,
+    AST_BINARY,
 }
 #[derive(Clone, PartialEq, Debug)]
 pub enum Data_Type {
     STR,
-    INT,
+    INT, // uses 32-bit memory
     FLOAT, //uses 64-bit memory so same as a double
     VOID,
     CHAR, 
@@ -29,7 +31,7 @@ pub struct AST {
     pub data_type: Data_Type, 
 
     // Add in the scope
-    pub scope: Option<Box<Scope>>, 
+    pub scope: Option<SharedScope>, 
 
     pub variable_definition_variable_name: Option<String>,
     pub variable_definition_value: Option<Box<AST>>,
@@ -60,12 +62,21 @@ pub struct AST {
     pub function_definition_name: Option<String>,
     pub function_definition_args: Option<Vec<AST>>,
 
-    pub class_definition_body: Option<Box<AST>>,
-    pub class_definition_name: Option<String>,
-    pub class_defintiion_args: Option<Vec<AST>>,
+    pub left: Option<Box<AST>>,
+    pub right: Option<Box<AST>>,
+    pub operator: Option<Types>,
 
-    pub class_call_name: Option<String>,
-    pub class_call_args: Option<Vec<AST>>,
+    // new stuff that doesnt need to be implemented rn
+    /*
+    pub if_condition: Option<Box<AST>>,
+    pub if_body: Option<BOX<AST>>,
+    
+    pub while_condition: Option<Box<AST>>,
+    pub while_body: Option<Box<AST>>,
+    
+    pub for_condition: Option<Box<AST>>,
+    pub for_body: Option<Box<AST>>,
+    */
 }
 
 impl AST {
@@ -105,12 +116,9 @@ impl AST {
             function_definition_name:None,
             function_definition_args:None,
 
-            class_definition_body:None,
-            class_definition_name:None,
-            class_defintiion_args:None,
-    
-            class_call_name:None,
-            class_call_args:None,
+            left: None,
+            right:None,
+            operator:None::<Types>,
         }
     }
 
@@ -120,6 +128,15 @@ impl AST {
             Ast_Type::AST_INT => print!("{}", self.int_value.unwrap()),
             Ast_Type::AST_FLOAT => print!("{:.precision$}", self.float_value.unwrap(), precision = self.past_decimal.unwrap_or(2) as usize),
             Ast_Type::AST_BOOL => print!("{}", if self.bool_value.unwrap() { "true" } else { "false" }),
+            Ast_Type::AST_VARIABLE_DEF => {
+                for ast in self.variable_definition_value.as_ref() {
+                    ast.print();
+                }
+            } 
+            Ast_Type::AST_VARIABLE => {
+                let t = self.scope.as_ref().unwrap().borrow().get_variable_definition(self.variable_name.as_ref().unwrap());
+                t.unwrap().print(); 
+            }
             _ => println!("<unhandled type>"),
         }
     }
