@@ -23,5 +23,5 @@ Make sure that you have rust and cargo installed
 
 On a unix system to run as an interpreter run 
 ```rust 
-cargo run - examples/file.iron 
+cargo run -- examples/file.iron 
 ```
