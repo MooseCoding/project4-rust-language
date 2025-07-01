@@ -93,4 +93,20 @@ impl Scope {
         self.function_definitions.push(def);
     }
 
+    pub fn update_variable_definition(&mut self, name: String, new_def: AST) {
+        for v in &mut self.variable_definitions {
+            if v.variable_definition_variable_name == Some(name.clone()) {
+                *v = new_def;
+                return;
+            }
+        }
+
+        if let Some(ref parent) = self.parent {
+            parent.borrow_mut().update_variable_definition(name, new_def);
+        }
+        else {
+            panic!("Variable {} not found in any scope", name);
+        }
+    }
+
 }

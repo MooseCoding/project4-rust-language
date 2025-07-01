@@ -6,6 +6,12 @@ Things to add
 
 - [x] Function definitions & usage
 - [x] Adding/subtracting
-- [ ]
+- [x] If statements
+- [x] While loops
+- [x] For loops
+- [ ] Classes
+- [ ] Boolean Logic
+- [ ] Libraries (std, std::math, std::time. std::string)
+- [ ] Arrays
 
 I was going to do more, but the current structure is kinda cooked so I'll add the rest to my next programming language (which I'll write in C). 

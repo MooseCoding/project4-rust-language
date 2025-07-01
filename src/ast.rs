@@ -14,6 +14,13 @@ pub enum Ast_Type {
     AST_BOOL,
     AST_NOOP,
     AST_BINARY,
+    AST_RETURN,
+    AST_IF,
+    AST_WHILE,
+    AST_REASSIGN,
+    AST_FOR,
+    AST_INCREMENT, 
+    AST_DECREMENT, 
 }
 #[derive(Clone, PartialEq, Debug)]
 pub enum Data_Type {
@@ -66,17 +73,24 @@ pub struct AST {
     pub right: Option<Box<AST>>,
     pub operator: Option<Types>,
 
+    pub return_value: Option<Box<AST>>,
+
     // new stuff that doesnt need to be implemented rn
-    /*
-    pub if_condition: Option<Box<AST>>,
-    pub if_body: Option<BOX<AST>>,
     
+    pub if_condition: Option<Box<AST>>,
+    pub if_body: Option<Box<AST>>,
+    pub else_body: Option<Box<AST>>,
+
     pub while_condition: Option<Box<AST>>,
     pub while_body: Option<Box<AST>>,
-    
+
+    pub reassign_name: Option<String>,
+    pub reassign_value: Option<Box<AST>>,
+
+    pub for_init: Option<Box<AST>>,
     pub for_condition: Option<Box<AST>>,
-    pub for_body: Option<Box<AST>>,
-    */
+    pub for_increment: Option<Box<AST>>,
+    pub for_body: Option<Box<AST>>, 
 }
 
 impl AST {
@@ -119,7 +133,35 @@ impl AST {
             left: None,
             right:None,
             operator:None::<Types>,
+
+            return_value: None,
+
+            if_condition: None,
+            if_body: None, 
+            else_body: None, 
+
+            while_condition: None,
+            while_body: None, 
+
+            reassign_name: None,
+            reassign_value: None,
+
+            for_init:None,
+            for_condition:None,
+            for_increment:None,
+            for_body:None,
         }
+    }
+
+    pub fn from_bool(b: bool) -> AST {
+        let mut node = AST::new(Ast_Type::AST_BOOL);
+
+        node.bool_init = Some(true);
+        node.bool_value = Some(b);
+
+        node.data_type = Data_Type::BOOL;
+
+        node
     }
 
     pub fn print(&self) {
@@ -136,6 +178,9 @@ impl AST {
             Ast_Type::AST_VARIABLE => {
                 let t = self.scope.as_ref().unwrap().borrow().get_variable_definition(self.variable_name.as_ref().unwrap());
                 t.unwrap().print(); 
+            }
+            Ast_Type::AST_RETURN => {
+                self.return_value.as_ref().unwrap().print();
             }
             _ => println!("<unhandled type>"),
         }

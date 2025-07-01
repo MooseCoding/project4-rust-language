@@ -1,6 +1,7 @@
-fun p(int x, float y) {
-    float z = x + y;
-    println(z);
+println("started"); 
+
+for(int i = 10; i > 0; i--) {
+    println(i);
 }
 
-p(10, 3.222);
+println("done"); 

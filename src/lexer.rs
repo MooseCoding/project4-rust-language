@@ -100,6 +100,9 @@ impl Lexer {
             }
             Some('=') => {
                 self.advance();
+                if self.current_char == Some('=') {
+                    return Token::new(Types::TOKEN_EE, "==".to_string());
+                }
                 Token::new(Types::TOKEN_EQUALS, "=".to_string())
             }
             Some(';') => {
@@ -108,6 +111,12 @@ impl Lexer {
             }
             Some('+') => {
                 self.advance();
+
+                if self.current_char == Some('+') {
+                    self.advance(); 
+                    return Token::new(Types::TOKEN_INCREMENT, "++".to_string());
+                }
+
                 Token::new(Types::TOKEN_ADD, "+".to_string())
             }
             Some(',') => {
@@ -116,6 +125,12 @@ impl Lexer {
             }
             Some('-') => {
                 self.advance();
+
+                if self.current_char == Some('-') {
+                    self.advance();
+                    return Token::new(Types::TOKEN_DECREMENT, "--".to_string());
+                }
+
                 Token::new(Types::TOKEN_SUBTRACT, "-".to_string())
             }
             Some('*') => {
@@ -136,10 +151,33 @@ impl Lexer {
             }
             Some('}') => {
                 self.advance();
+                if self.current_char == Some('=') {
+                    return Token::new(Types::TOKEN_GEQ, ">=".to_string());
+                }
                 Token::new(Types::TOKEN_RBRACK, "}".to_string())
             }
+            Some('<') => {
+                self.advance();
+
+                if self.current_char == Some('=') {
+                    self.advance();
+                    return Token::new(Types::TOKEN_LEQ, "<=".to_string());
+                }
+
+                Token::new(Types::TOKEN_LESS_THAN, "<".to_string())
+            }
+            Some('>') => {
+                self.advance();
+            
+                if self.current_char == Some('=') {
+                    self.advance();
+                    return Token::new(Types::TOKEN_GEQ, ">=".to_string());
+                }
+
+                Token::new(Types::TOKEN_GREATER_THAN, ">".to_string())
+            }
             Some(c) if c.is_ascii_digit() => self.collect_num(),
-            Some(c) if c.is_alphabetic() || c == '_' => self.collect_id(),
+            Some(c) if c.is_alphabetic() || c == '_'  => self.collect_id(),
             Some(_) => {
                 let c = self.current_char.unwrap().to_string();
                 self.advance();
