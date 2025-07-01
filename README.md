@@ -13,6 +13,7 @@ We're gonna do a programming language written in Rust. I've done this priorlyin 
 - [ ] Boolean Logic
 - [ ] Libraries (std, std::math, std::time. std::string)
 - [ ] Arrays
+- [ ] Breaking
 
 I was going to do more, but the current structure is kinda cooked so I'll add the rest to my next programming language (which I'll write in C). 
 
