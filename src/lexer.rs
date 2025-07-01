@@ -63,7 +63,7 @@ impl Lexer {
     pub fn collect_num(&mut self) -> Token {
         let mut result = String::new();
         while let Some(c) = self.current_char {
-            if(c.is_ascii_digit()) {
+            if(c.is_ascii_digit() || c == '.') {
                 result.push(c);
                 self.advance();
             }

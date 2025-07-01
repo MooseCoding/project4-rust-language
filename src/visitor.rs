@@ -94,8 +94,9 @@ impl Visitor {
         let new_scope = Rc::new(RefCell::new(Scope::new_with_parent(func_scope.clone())));
 
         for (param, arg) in params.iter().zip(evaluated_args.iter()) {
+            let expected = param.variable_type.as_ref().unwrap();
 
-            if param.variable_type.as_ref() != Some(&arg.data_type) {
+            if param.variable_type.as_ref() != Some(&arg.data_type) && !(expected == &Data_Type::FLOAT && arg.data_type == Data_Type::INT){
                 panic!(
                     "Function {} argument type mismatch: expected {:?}, got {:?}",
                     name, param.variable_type, arg.data_type
@@ -187,7 +188,6 @@ impl Visitor {
         let left_eval = self.visit(node.left.as_mut().expect("Missing left operand"));
         let right_eval = self.visit(node.right.as_mut().expect("Missing right operand"));
 
-        // Handle string concat
         if *op == Types::TOKEN_ADD {
             if let (Some(ls), Some(rs)) = (&left_eval.string_value, &right_eval.string_value) {
                 let mut n = AST::new(Ast_Type::AST_STRING);

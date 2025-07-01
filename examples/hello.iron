@@ -1,6 +1,6 @@
-fun p(int x, int y) {
-    int z = x + y;
+fun p(int x, float y) {
+    float z = x + y;
     println(z);
 }
 
-p(10, 3);
+p(10, 3.222);
