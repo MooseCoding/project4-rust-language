@@ -111,6 +111,7 @@ impl Lexer {
             Some('&') => {
                 self.advance();
                 if self.current_char == Some('&') {
+                    self.advance();
                     return Token::new(Types::TOKEN_AND);
                 }
                 
@@ -119,6 +120,7 @@ impl Lexer {
             Some('|') => {
                 self.advance();
                 if self.current_char == Some('|') {
+                    self.advance();
                     return Token::new(Types::TOKEN_OR);
                 }
                 
