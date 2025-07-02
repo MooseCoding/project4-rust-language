@@ -1,7 +1,0 @@
-println("started"); 
-
-for(int i = 10; i > 0; i--) {
-    println(i);
-}
-
-println("done"); 

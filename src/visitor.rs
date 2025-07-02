@@ -45,6 +45,7 @@ impl Visitor {
             Ast_Type::AST_INCREMENT => self.visit_increment(node),
             Ast_Type::AST_DECREMENT => self.visit_decrement(node), 
             Ast_Type::AST_FOR => self.visit_for(node),
+            Ast_Type::AST_UNARY => self.visit_unary(node), 
             _ => node.clone(),
         }
     }
@@ -233,6 +234,30 @@ impl Visitor {
         let left_eval = self.visit(node.left.as_mut().expect("Missing left operand"));
         let right_eval = self.visit(node.right.as_mut().expect("Missing right operand"));
 
+        if matches!(op, Types::TOKEN_OR | Types::TOKEN_AND) {
+            let l_bool = match left_eval.ast_type {
+                Ast_Type::AST_BOOL => left_eval.bool_value.unwrap_or(false),
+                Ast_Type::AST_INT => left_eval.int_value.unwrap_or(0) != 0,
+                Ast_Type::AST_FLOAT => left_eval.float_value.unwrap_or(0.0) != 0.0,
+                _ => panic!("Invalid left operand type for boolean operation"),
+            };
+
+            let r_bool = match right_eval.ast_type {
+                Ast_Type::AST_BOOL => right_eval.bool_value.unwrap_or(false),
+                Ast_Type::AST_INT => right_eval.int_value.unwrap_or(0) != 0,
+                Ast_Type::AST_FLOAT => right_eval.float_value.unwrap_or(0.0) != 0.0,
+                _ => panic!("Invalid right operand type for boolean operation"),
+            };
+
+            let result = match op {
+                Types::TOKEN_OR => l_bool || r_bool,
+                Types::TOKEN_AND => l_bool && r_bool,
+                _ => unreachable!(),
+            };
+
+            return AST::from_bool(result);
+        }
+
         if *op == Types::TOKEN_ADD {
             if let (Some(ls), Some(rs)) = (&left_eval.string_value, &right_eval.string_value) {
                 let mut n = AST::new(Ast_Type::AST_STRING);
@@ -276,7 +301,7 @@ impl Visitor {
                         n.float_value = Some(result);
                         n.float_init = Some(true);
                         n.data_type = Data_Type::FLOAT;
-                        n.scope = Some(node.scope.clone().unwrap_or_else(|| Rc::new(RefCell::new(crate::scope::Scope::new()))));                       
+                        n.scope = Some(node.scope.clone().unwrap_or_else(|| Rc::new(RefCell::new(crate::scope::Scope::new()))));
                         n
                     }
                     Data_Type::INT => {
@@ -420,6 +445,41 @@ impl Visitor {
             self.visit(&mut *node.while_body.clone().unwrap());
         }
         AST::new(Ast_Type::AST_NOOP)
+    }
+
+    pub fn visit_unary(&mut self, node: &mut AST) -> AST {
+        let op = node.operator.as_ref().expect("unary operator missing");
+        let mut operand = self.visit(node.right.as_mut().expect("unary operand missing"));
+
+        match op {
+            Types::TOKEN_SUBTRACT => match operand.ast_type {
+                Ast_Type::AST_INT => {
+                    operand.int_value = Some(-operand.int_value.unwrap());
+                    operand
+                }
+                Ast_Type::AST_FLOAT => {
+                    operand.float_value = Some(-operand.float_value.unwrap());
+                    operand
+                }
+                _ => panic!("Unary minus only supports int and float"),
+            },
+            Types::TOKEN_NOT => match operand.ast_type {
+                Ast_Type::AST_BOOL => {
+                    operand.bool_value = Some(!operand.bool_value.unwrap());
+                    operand
+                }
+                Ast_Type::AST_INT => {
+                    operand.int_value = Some(if operand.int_value.unwrap() == 0 { 1 } else { 0 });
+                    operand
+                }
+                Ast_Type::AST_FLOAT => {
+                    operand.float_value = Some(if operand.float_value.unwrap() == 0.0 { 1.0 } else { 0.0 });
+                    operand
+                }
+                _ => panic!("Unary not only supports bool, int, float"),
+            },
+            _ => panic!("Unknown unary operator {:?}", op),
+        }
     }
 
     pub fn visit_for(&mut self, node: &mut AST) -> AST {

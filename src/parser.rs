@@ -67,7 +67,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_expr(&mut self) -> AST {
-        self.parse_comparison()
+        self.parse_or()
     }
 
     pub fn parse_id(&mut self) -> AST {
@@ -123,7 +123,7 @@ impl<'a> Parser<'a> {
 
     pub fn parse_bool(&mut self) -> AST {
         let mut ast = AST::new(Ast_Type::AST_BOOL);
-        ast.bool_value = Some(self.current_token.value != "false");
+        ast.bool_value = Some(self.current_token.value == "true");
         ast.bool_init = Some(true);
         ast.scope = Some(self.scope.clone());
         self.eat(Types::TOKEN_BOOL);
@@ -234,6 +234,17 @@ impl<'a> Parser<'a> {
                 }
             }
             Types::TOKEN_STRING => self.parse_string(),
+            Types::TOKEN_BOOL => self.parse_bool(), 
+            Types::TOKEN_NOT => {
+                self.eat(Types::TOKEN_NOT);
+                let expr = self.parse_factor();
+
+                let mut node = AST::new(Ast_Type::AST_UNARY);
+                node.operator = Some(Types::TOKEN_NOT);
+                node.right = Some(Box::new(expr));
+                node.scope = Some(self.scope.clone());
+                node
+            }
             _ => panic!("Unexpected token in factor {:?}", self.current_token.clone()),
         }
     }
@@ -508,8 +519,7 @@ impl<'a> Parser<'a> {
             Types::TOKEN_GREATER_THAN |
             Types::TOKEN_LESS_THAN |
             Types::TOKEN_LEQ |
-            Types::TOKEN_GEQ |
-            Types::TOKEN_EE
+            Types::TOKEN_GEQ
         ) {
             let op = self.current_token.kind.clone();
             self.eat(op.clone());
@@ -640,4 +650,42 @@ impl<'a> Parser<'a> {
         }
     }
 
+    pub fn parse_or(&mut self) -> AST {
+        let mut left = self.parse_and();
+
+        while self.current_token.kind == Types::TOKEN_OR {
+            let op = self.current_token.kind.clone();
+            self.eat(op.clone());
+            let right = self.parse_and();
+            left = self.combine_ast(left, op, right);
+        }
+
+        left
+    }
+
+    pub fn parse_and(&mut self) -> AST {
+        let mut left = self.parse_equality();
+
+        while self.current_token.kind == Types::TOKEN_AND {
+            let op = self.current_token.kind.clone();
+            self.eat(op.clone());
+            let right = self.parse_equality();
+            left = self.combine_ast(left, op, right);
+        }
+
+        left
+    }
+
+    pub fn parse_equality(&mut self) -> AST {
+        let mut left = self.parse_comparison();
+
+        while matches!(self.current_token.kind, Types::TOKEN_EE | Types::TOKEN_NEQ) {
+            let op = self.current_token.kind.clone();   
+            self.eat(op.clone());
+            let right = self.parse_comparison();
+            left = self.combine_ast(left, op, right);
+        }
+
+        left
+    }
 }

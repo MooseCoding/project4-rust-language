@@ -21,6 +21,7 @@ pub enum Ast_Type {
     AST_FOR,
     AST_INCREMENT, 
     AST_DECREMENT, 
+    AST_UNARY,
 }
 #[derive(Clone, PartialEq, Debug)]
 pub enum Data_Type {

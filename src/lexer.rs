@@ -98,33 +98,33 @@ impl Lexer {
                 self.advance();
                 Token::new(Types::TOKEN_STRING, string)
             }
-            Some('!') = {
+            Some('!') => {
                 self.advance();
                 
                 if self.current_char == Some('=') {
                     self.advance();
-                    return Token::new(Types::TOKEN_NEQ);
+                    return Token::new(Types::TOKEN_NEQ, "!=".to_string());
                 }
                 
-                Token::new(Types::TOKEN_NOT)
+                Token::new(Types::TOKEN_NOT, "!".to_string())
             }
             Some('&') => {
                 self.advance();
                 if self.current_char == Some('&') {
                     self.advance();
-                    return Token::new(Types::TOKEN_AND);
+                    return Token::new(Types::TOKEN_AND, "&&".to_string());
                 }
                 
-                Token::new(Types::TOKEN_EOF)
+                Token::new(Types::TOKEN_EOF, "".to_string())
             }
             Some('|') => {
                 self.advance();
                 if self.current_char == Some('|') {
                     self.advance();
-                    return Token::new(Types::TOKEN_OR);
+                    return Token::new(Types::TOKEN_OR, "||".to_string());
                 }
                 
-                Token::new(Types::TOKEN_EOF)
+                Token::new(Types::TOKEN_EOF, "".to_string())
             }
             Some('=') => {
                 self.advance();
