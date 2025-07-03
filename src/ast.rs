@@ -22,6 +22,9 @@ pub enum Ast_Type {
     AST_INCREMENT, 
     AST_DECREMENT, 
     AST_UNARY,
+    AST_ARRAY_ACCESS,
+    AST_ARRAY_DEF, 
+    AST_ARRAY_ASSIGN, 
 }
 #[derive(Clone, PartialEq, Debug)]
 pub enum Data_Type {
@@ -31,6 +34,7 @@ pub enum Data_Type {
     VOID,
     CHAR, 
     BOOL, 
+    ARRAY(Box<Data_Type>), 
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -92,6 +96,11 @@ pub struct AST {
     pub for_condition: Option<Box<AST>>,
     pub for_increment: Option<Box<AST>>,
     pub for_body: Option<Box<AST>>, 
+
+    pub array_elements: Option<Vec<AST>>,
+    pub array_name: Option<String>,
+    pub array_index: Option<Box<AST>>,
+    pub array_assign_value: Option<Box<AST>>,
 }
 
 impl AST {
@@ -151,6 +160,11 @@ impl AST {
             for_condition:None,
             for_increment:None,
             for_body:None,
+
+            array_elements:None,
+            array_assign_value:None,
+            array_index:None,
+            array_name:None, 
         }
     }
 
@@ -182,6 +196,18 @@ impl AST {
             }
             Ast_Type::AST_RETURN => {
                 self.return_value.as_ref().unwrap().print();
+            }
+            Ast_Type::AST_ARRAY_DEF => {
+                print!("[");
+                if let Some(elements) = &self.array_elements {
+                    for (i, element) in elements.iter().enumerate() {
+                        element.print();
+                        if i < elements.len() -1 {
+                            print!(", ");
+                        }
+                    }
+                }
+                print!("]");
             }
             _ => println!("<unhandled type>"),
         }

@@ -10,7 +10,7 @@ We're gonna do a programming language written in Rust. I've done this priorlyin 
 - [x] While loops
 - [x] For loops
 - [ ] Classes
-- [ ] Boolean Logic
+- [x] Boolean Logic
 - [ ] Libraries (std, std::math, std::time. std::string)
 - [ ] Arrays
 - [ ] Breaking

@@ -5,7 +5,6 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use crate::scope::{Scope};
 
-
 pub struct Visitor {
     pub builtins: HashMap<String, Box<dyn Fn(&[AST]) -> AST>>,
 }
@@ -46,6 +45,7 @@ impl Visitor {
             Ast_Type::AST_DECREMENT => self.visit_decrement(node), 
             Ast_Type::AST_FOR => self.visit_for(node),
             Ast_Type::AST_UNARY => self.visit_unary(node), 
+            Ast_Type::AST_ARRAY_ACCESS => self.visit_array_access(node),
             _ => node.clone(),
         }
     }
@@ -53,16 +53,22 @@ impl Visitor {
     pub fn visit_variable(&mut self, node: &mut AST) -> AST {
         let name = node.variable_name.as_ref().expect("Variable name is missing");
         let scope = node.scope.as_ref().expect("Scope is missing");
+        let var_def = scope.borrow().get_variable_definition(name).unwrap_or_else(|| panic!("Undefined variable: {}", name)); 
 
-        if let Some(var_def) = scope.borrow().get_variable_definition(name) {
-            if let Some(val) = &var_def.variable_definition_value {
-                return *val.clone();
-            } else {
-                panic!("Variable '{}' has no value in scope {:p}", name, &*node.scope.as_ref().expect(""));
+        match var_def.ast_type {
+            Ast_Type::AST_VARIABLE_DEF => {
+                if let Some(val) = &var_def.variable_definition_value {
+                    return *val.clone();
+                } 
+                else {
+                    panic!("Variable '{}' has no value in scope {:p}", name, &*node.scope.as_ref().expect(""));
+                }
             }
+            Ast_Type::AST_ARRAY_DEF => {
+                var_def.clone() 
+            }
+            _ => panic!("Unknown variable type for variable name {}", name),
         }
-
-        panic!("Undefined variable: {}", name);
     }
 
     pub fn visit_function_call(&mut self, node: &mut AST) -> AST {
@@ -160,6 +166,10 @@ impl Visitor {
 
                     scope.borrow_mut().add_variable_definition(stmt.clone());
                 }
+                else if stmt.ast_type == Ast_Type::AST_ARRAY_DEF {                    
+                    self.set_scope_recursively(stmt, scope.clone());
+                    scope.borrow_mut().add_variable_definition(stmt.clone()); 
+                }
                 else {
                     let result = self.visit(stmt);
                     if result.ast_type == Ast_Type::AST_RETURN {
@@ -225,6 +235,12 @@ impl Visitor {
 
         if let Some(r) = node.reassign_value.as_mut()  {
             self.set_scope_recursively(r, scope.clone());
+        }
+    
+        if let Some(v) = node.array_elements.as_mut() {
+            for element in v {
+                self.set_scope_recursively(element, scope.clone());
+            }
         }
     }
 
@@ -528,5 +544,34 @@ impl Visitor {
         }
 
         AST::new(Ast_Type::AST_NOOP)
+    }
+
+    pub fn visit_array_access(&mut self, node: &mut AST) -> AST {
+        let name = node.array_name.clone().unwrap();
+        let index = self.visit(&mut *node.array_index.as_mut().unwrap());
+        let scope = node.scope.clone().unwrap();
+        let def = scope.borrow().get_variable_definition(&name).unwrap_or_else(|| panic!("Array {} not defined", name.clone()));
+        let value = node.array_assign_value.as_ref().unwrap(); 
+
+        let idx = match index.ast_type {
+            Ast_Type::AST_INT => index.int_value.unwrap(),
+            _ => panic!("Array index must be an int"),
+        };
+
+        let mut elements = def.array_elements.clone().unwrap();
+
+        if idx < 0 || (idx as usize) >= elements.len() {
+            panic!("index {} out of bounds for array {}", idx.clone(), name.clone());
+        }
+
+        elements[idx as usize] = *value.clone(); 
+
+        let mut new_def = AST::new(Ast_Type::AST_ARRAY_DEF);
+        new_def.array_name = Some(name.clone());
+        new_def.array_elements = Some(elements.clone());
+        
+        scope.borrow_mut().update_variable_definition(name.clone(), new_def); 
+
+        self.visit(&mut elements[idx as usize].clone()) 
     }
 }

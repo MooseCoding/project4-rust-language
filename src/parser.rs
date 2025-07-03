@@ -308,11 +308,96 @@ impl<'a> Parser<'a> {
             
             return decrement
         }
+        else if self.current_token.kind == Types::TOKEN_LBOX {
+            self.eat(Types::TOKEN_LBOX);
+            let index = self.parse_expr();
+            self.eat(Types::TOKEN_RBOX);
+
+            if self.current_token.kind == Types::TOKEN_EQUALS {
+                return self.parse_array_assignment(n.clone(), index.clone());
+            }
+
+            let mut node = AST::new(Ast_Type::AST_ARRAY_ACCESS);
+            node.array_name = Some(n.clone());
+            node.array_index = Some(Box::new(index));
+            node.data_type = self.scope.clone().borrow().get_variable_definition(&n.clone()).unwrap().data_type; 
+            node.scope = Some(self.scope.clone()); 
+            return node; 
+        }
 
         let mut ast = AST::new(Ast_Type::AST_VARIABLE);
         ast.variable_name = Some(n);
         ast.scope = Some(self.scope.clone());
         ast
+    }
+
+    pub fn parse_array_definition(&mut self, declared_type: Data_Type) -> AST {
+        self.eat(Types::TOKEN_LBOX);
+        self.eat(Types::TOKEN_RBOX);
+
+        let name = self.current_token.value.clone(); // Name
+
+        self.eat(Types::TOKEN_ID);
+
+        self.eat(Types::TOKEN_EQUALS);
+
+
+        let mut elements = vec![];
+
+        self.eat(Types::TOKEN_LBOX);
+
+        if self.current_token.kind != Types::TOKEN_RBOX {
+            loop {
+                let mut element = self.parse_expr();
+
+                if element.data_type == Data_Type::INT && declared_type == Data_Type::FLOAT {
+                    element.data_type = Data_Type::FLOAT;
+                    element.float_value = Some(element.int_value.unwrap() as f64);
+                    element.int_value = None;
+                    element.int_init = None;
+                    element.float_init = Some(true);
+                    element.past_decimal = Some(0); 
+                    element.ast_type = Ast_Type::AST_FLOAT;
+                }
+
+                if element.data_type != declared_type  {
+                    panic!("Element's data type is not the declared type")
+                }
+
+                elements.push(element);
+
+                if self.current_token.kind == Types::TOKEN_COMMA {
+                    self.eat(Types::TOKEN_COMMA);
+                }
+                else {
+                    break; 
+                }
+            }
+        }
+
+        self.eat(Types::TOKEN_RBOX);
+
+        let mut node = AST::new(Ast_Type::AST_ARRAY_DEF);
+        node.array_elements = Some(elements);
+        node.array_name = Some(name.clone()); 
+        node.data_type = declared_type; 
+        node.scope = Some(self.scope.clone()); 
+
+        self.scope.borrow_mut().add_variable_definition(node.clone()); 
+
+        node 
+    }   
+
+    pub fn parse_array_assignment(&mut self, name: String, index: AST) -> AST {
+        self.eat(Types::TOKEN_EQUALS);
+        let value = self.parse_expr();
+
+        let mut node = AST::new(Ast_Type::AST_ARRAY_ACCESS);
+        node.array_index = Some(Box::new(index.clone()));
+        node.array_name = Some(name.clone());
+        node.array_assign_value = Some(Box::new(value.clone()));
+        node.scope = Some(self.scope.clone()); 
+        node 
     }
 
     pub fn parse_variable_definition(&mut self) -> AST {
@@ -324,6 +409,13 @@ impl<'a> Parser<'a> {
         };
 
         self.eat(Types::TOKEN_ID);
+
+
+        // Array Definition
+        if self.current_token.kind == Types::TOKEN_LBOX {
+            return self.parse_array_definition(t.clone());
+        }
+
         let n = self.current_token.value.clone();
         self.eat(Types::TOKEN_ID);
         self.eat(Types::TOKEN_EQUALS);

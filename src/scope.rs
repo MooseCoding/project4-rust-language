@@ -1,4 +1,4 @@
-use crate::ast::AST;
+use crate::ast::{Ast_Type, AST};
 use std::rc::Rc;
 use std::cell::RefCell;
 use std::fmt;
@@ -51,6 +51,11 @@ impl Scope {
                     return Some(def.clone());
                 }
             }
+            else if let Some(def_name) = &def.array_name {
+                if def_name == name {
+                    return Some(def.clone()); 
+                }
+            }
         }
         if let Some(parent) = &self.parent {
             return parent.borrow().get_variable_definition(name);
@@ -59,15 +64,31 @@ impl Scope {
     }
 
     pub fn add_variable_definition(&mut self, def: AST) {
-        let name = def
-            .variable_definition_variable_name
-            .as_ref()
-            .expect("Var def has no name");
-        for existing_def in self.variable_definitions.iter_mut() {
-            if let Some(existing_name) = &existing_def.variable_definition_variable_name {
-                if existing_name == name {
-                    *existing_def = def; 
-                    return;
+        if def.ast_type == Ast_Type::AST_VARIABLE_DEF {
+            let name = def
+                .variable_definition_variable_name
+                .as_ref()
+                .expect("Var def has no name");
+            for existing_def in self.variable_definitions.iter_mut() {
+                if let Some(existing_name) = &existing_def.variable_definition_variable_name {
+                    if existing_name == name {
+                        *existing_def = def; 
+                        return;
+                    }
+                }
+            }
+        }
+        else if def.ast_type == Ast_Type::AST_ARRAY_DEF {
+            let name = def
+                .array_name 
+                .as_ref()
+                .expect("Array def has no name");
+            for existing_def in self.variable_definitions.iter_mut() {
+                if let Some(existing_name) = &existing_def.variable_definition_variable_name {
+                    if existing_name == name {
+                        *existing_def = def; 
+                        return;
+                    }
                 }
             }
         }
@@ -99,6 +120,10 @@ impl Scope {
                 *v = new_def;
                 return;
             }
+            if v.array_name == Some(name.clone()) {
+                *v = new_def; 
+                return; 
+            }
         }
 
         if let Some(ref parent) = self.parent {
@@ -108,5 +133,4 @@ impl Scope {
             panic!("Variable {} not found in any scope", name);
         }
     }
-
 }

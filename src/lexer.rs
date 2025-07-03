@@ -204,6 +204,14 @@ impl Lexer {
 
                 Token::new(Types::TOKEN_GREATER_THAN, ">".to_string())
             }
+            Some('[') => {
+                self.advance();
+                Token::new(Types::TOKEN_LBOX, "[".to_string())
+            }
+            Some(']') => {
+                self.advance(); 
+                Token::new(Types::TOKEN_RBOX, "]".to_string())
+            }
             Some(c) if c.is_ascii_digit() => self.collect_num(),
             Some(c) if c.is_alphabetic() || c == '_'  => self.collect_id(),
             Some(_) => {
