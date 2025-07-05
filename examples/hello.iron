@@ -1,3 +1,9 @@
-int[] a = [10, 12];
-a[1] = 5; 
-println(a); 
+import "test"; 
+import <math>;
+
+float y = math.sqrt(4);
+println(y); 
+
+float x = test.add(4, 2);
+
+println(x); 

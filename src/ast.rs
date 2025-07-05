@@ -25,6 +25,8 @@ pub enum Ast_Type {
     AST_ARRAY_ACCESS,
     AST_ARRAY_DEF, 
     AST_ARRAY_ASSIGN, 
+    AST_IMPORT,
+    AST_DOT, 
 }
 #[derive(Clone, PartialEq, Debug)]
 pub enum Data_Type {
@@ -101,6 +103,12 @@ pub struct AST {
     pub array_name: Option<String>,
     pub array_index: Option<Box<AST>>,
     pub array_assign_value: Option<Box<AST>>,
+
+    pub dot_left: Option<Box<AST>>,
+    pub dot_right: Option<Box<AST>>, 
+
+    pub is_builtin: Option<bool>, 
+    pub imported_ast: Option<Box<AST>>, 
 }
 
 impl AST {
@@ -165,6 +173,12 @@ impl AST {
             array_assign_value:None,
             array_index:None,
             array_name:None, 
+
+            dot_left:None,
+            dot_right:None, 
+
+            is_builtin:None, 
+            imported_ast:None, 
         }
     }
 
@@ -209,7 +223,7 @@ impl AST {
                 }
                 print!("]");
             }
-            _ => println!("<unhandled type>"),
+            _ => println!("<unhandled type>, {:#?}", self.ast_type),
         }
     }
 }

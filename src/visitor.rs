@@ -3,13 +3,15 @@ use crate::token::{Types};
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::cell::RefCell;
-use crate::scope::{Scope};
+use crate::scope::{Scope, SharedScope};
+use crate::lexer::Lexer;
+use crate::parser::Parser; 
 
 pub struct Visitor {
     pub builtins: HashMap<String, Box<dyn Fn(&[AST]) -> AST>>,
 }
 
-impl Visitor {
+impl Visitor { 
     pub fn new() -> Self {
         let mut b: HashMap<String, Box<dyn Fn(&[AST]) -> AST>> = HashMap::new();
 
@@ -46,31 +48,118 @@ impl Visitor {
             Ast_Type::AST_FOR => self.visit_for(node),
             Ast_Type::AST_UNARY => self.visit_unary(node), 
             Ast_Type::AST_ARRAY_ACCESS => self.visit_array_access(node),
+            Ast_Type::AST_DOT => self.visit_dot(node),
+            Ast_Type::AST_IMPORT => self.visit_import(node), 
             _ => node.clone(),
         }
     }
 
+   pub fn visit_dot(&mut self, node: &mut AST) -> AST {
+        let left = self.visit(node.dot_left.as_mut().unwrap());
+
+        if left.ast_type == Ast_Type::AST_NOOP {
+            panic!("Cannot access property on AST_NOOP (likely uninitialized)");
+        }
+
+        match left.ast_type {
+            Ast_Type::AST_VARIABLE | Ast_Type::AST_IMPORT => {
+                let name = left.variable_name.as_ref().unwrap();
+                let scope = node.scope.as_ref().unwrap();
+
+                if let Some(import) = scope.borrow().get_import(name) {
+                    let f = node.dot_right.as_ref().unwrap();
+
+                    if f.ast_type == Ast_Type::AST_FUNCTION_CALL {
+                        let f_name = f.function_call_name.as_ref().unwrap();
+                        let args = f.function_call_args.clone().unwrap_or(vec![]);
+
+                        if import.is_builtin.unwrap_or(false) {
+                            return self.call_library_function(name, f_name, args, &node.scope);
+                        }
+
+                        let import_scope = import.scope.clone().expect("Imported AST missing scope");
+
+                        let def = import_scope.borrow().get_function_definition(f_name)
+                            .unwrap_or_else(|| panic!("Function '{}' not found in imported AST", f_name));
+
+                        let mut f_call = AST::new(Ast_Type::AST_FUNCTION_CALL);
+                        f_call.function_call_name = Some(f_name.clone());
+                        f_call.function_call_args = Some(args);
+                        f_call.scope = Some(import_scope.clone());
+
+                        return self.visit_function_call(&mut f_call);
+                    }
+
+                    panic!("Cannot call dot access on non-function node");
+                }
+
+                panic!("Library `{}` not found in imports", name);
+            }
+
+            _ => panic!("Dot access not supported on {:#?}", left.ast_type),
+        }
+    }
+
+    pub fn visit_import(&mut self, node: &mut AST) -> AST {
+        let lib = node.variable_name.as_ref().unwrap().clone();
+        let scope = node.scope.clone().expect("Import node missing scope");
+
+        if node.is_builtin.unwrap_or(false) {
+            return AST::new(Ast_Type::AST_NOOP);
+        }
+
+        let path = format!("examples/lib/{}.steel", lib);
+        let contents = std::fs::read_to_string(&path)
+            .unwrap_or_else(|_| panic!("Library `{}` not found at path {}", lib, path));
+
+        let mut lexer = Lexer::new(&contents);
+        let mut parser = Parser::new(&mut lexer, scope.clone());
+
+        let mut lib_ast = parser.parse();
+        lib_ast.scope = Some(scope.clone()); 
+
+        let mut import_wrapper = AST::new(Ast_Type::AST_IMPORT);
+        import_wrapper.variable_name = Some(lib.clone());
+        import_wrapper.scope = Some(scope.clone());
+        import_wrapper.imported_ast = Some(Box::new(lib_ast.clone()));
+     
+        scope.borrow_mut().update_import(import_wrapper.clone());
+
+        node.scope = Some(scope.clone()); 
+
+        AST::new(Ast_Type::AST_NOOP)
+    }
+    
     pub fn visit_variable(&mut self, node: &mut AST) -> AST {
-        let name = node.variable_name.as_ref().expect("Variable name is missing");
-        let scope = node.scope.as_ref().expect("Scope is missing");
-        let var_def = scope.borrow().get_variable_definition(name).unwrap_or_else(|| panic!("Undefined variable: {}", name)); 
+        let name = node.variable_name.as_ref().unwrap();
+        let scope = node.scope.as_ref().unwrap();
+
+        if let Some(import) = scope.borrow().get_import(name) {
+            let mut dummy = AST::new(Ast_Type::AST_IMPORT);
+            dummy.variable_name = Some(name.clone());
+            dummy.scope = Some(scope.clone());
+            dummy.is_builtin = import.is_builtin;
+            dummy.imported_ast = import.imported_ast.clone();
+
+            return dummy;
+        }
+
+        let var_def = scope.borrow().get_variable_definition(name)
+            .unwrap_or_else(|| panic!("Undefined variable: {}", name));
 
         match var_def.ast_type {
             Ast_Type::AST_VARIABLE_DEF => {
                 if let Some(val) = &var_def.variable_definition_value {
                     return *val.clone();
-                } 
-                else {
-                    panic!("Variable '{}' has no value in scope {:p}", name, &*node.scope.as_ref().expect(""));
+                } else {
+                    panic!("Variable '{}' has no value", name);
                 }
             }
-            Ast_Type::AST_ARRAY_DEF => {
-                var_def.clone() 
-            }
-            _ => panic!("Unknown variable type for variable name {}", name),
+            Ast_Type::AST_ARRAY_DEF => var_def.clone(),
+            _ => panic!("Unknown variable type '{}'", name),
         }
     }
-
+    
     pub fn visit_function_call(&mut self, node: &mut AST) -> AST {
         let name = node.function_call_name.as_ref().expect("Missing function name");
 
@@ -143,6 +232,44 @@ impl Visitor {
         }
 
         AST::new(Ast_Type::AST_NOOP)
+    }
+
+    pub fn call_library_function(&mut self,module: &str,function: &str,args: Vec<AST>,scope: &Option<SharedScope>) -> AST {
+        match module {
+            "math" => match function {
+                "sqrt" => {
+                    let num = self.visit(&mut args[0].clone());
+
+                    let mut result = AST::new(Ast_Type::AST_FLOAT);
+                    result.float_init = Some(true);
+                    result.data_type = Data_Type::FLOAT;
+
+                    result.float_value = Some(match num.ast_type {
+                        Ast_Type::AST_FLOAT => num.float_value.unwrap().sqrt(),
+                        Ast_Type::AST_INT => (num.int_value.unwrap() as f64).sqrt(),
+                        _ => panic!("sqrt() requires int or float"),
+                    });
+
+                    return result;
+                }
+                "abs" => {
+                    let num = self.visit(&mut args[0].clone());
+                    let mut result = AST::new(Ast_Type::AST_FLOAT);
+                    result.float_init = Some(true);
+                    result.data_type = Data_Type::FLOAT;
+
+                    result.float_value = Some(match num.ast_type {
+                        Ast_Type::AST_FLOAT => num.float_value.unwrap().abs(),
+                        Ast_Type::AST_INT => (num.int_value.unwrap() as f64).abs(),
+                        _ => panic!("abs() requires int or float"),
+                    });
+
+                    return result;
+                }
+                _ => panic!("Function `{}` not found in <math>", function),
+            },
+            _ => panic!("Built-in library `{}` not implemented", module),
+        }
     }
 
     pub fn visit_compound(&mut self, node: &mut AST) -> AST {

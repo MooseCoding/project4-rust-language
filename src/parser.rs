@@ -78,8 +78,45 @@ impl<'a> Parser<'a> {
             "if" => self.parse_if(),
             "while" => self.parse_while(), 
             "for" => self.parse_for(), 
+            "import" => self.parse_import(), 
             _ => self.parse_variable(),
         }
+    }
+
+    pub fn parse_import(&mut self) -> AST {
+        self.eat(Types::TOKEN_ID);
+
+        let mut node = AST::new(Ast_Type::AST_IMPORT);
+
+        if self.current_token.kind == Types::TOKEN_LESS_THAN {
+            self.eat(Types::TOKEN_LESS_THAN);
+
+            node.string_value = Some(self.current_token.value.clone());
+            node.variable_name = Some(self.current_token.value.clone());
+
+            node.is_builtin = Some(true);
+
+            self.eat(Types::TOKEN_ID);
+
+            self.eat(Types::TOKEN_GREATER_THAN);
+
+        }
+        else {
+            let file = self.current_token.value.clone(); 
+
+            node.string_value = Some(file.clone());
+            node.variable_name = Some(file.clone());
+
+            node.is_builtin = Some(false); 
+
+            self.eat(Types::TOKEN_STRING); 
+        }
+
+        node.scope = Some(self.scope.clone());
+
+        self.scope.borrow_mut().add_import(&node.clone());
+
+        node
     }
 
     pub fn parse_return(&mut self) -> AST {
@@ -285,6 +322,32 @@ impl<'a> Parser<'a> {
 
         self.eat(Types::TOKEN_ID);
 
+        let mut ast = AST::new(Ast_Type::AST_VARIABLE);
+        ast.variable_name = Some(n.clone());
+        ast.scope = Some(self.scope.clone());
+
+        while self.current_token.kind == Types::TOKEN_DOT {
+            self.eat(Types::TOKEN_DOT);
+
+            let field = self.current_token.value.clone();
+            self.eat(Types::TOKEN_ID);
+
+            let mut node = AST::new(Ast_Type::AST_DOT); 
+            node.dot_left = Some(Box::new(ast));
+
+            if self.current_token.kind == Types::TOKEN_LPARENT {
+                node.dot_right = Some(Box::new(self.parse_function_call()));
+            }
+            else {
+                let mut right = AST::new(Ast_Type::AST_VARIABLE);
+
+                right.variable_name = Some(field); 
+                right.scope = Some(self.scope.clone());
+                node.dot_right = Some(Box::new(right));
+            }
+
+            ast = node; 
+        }
 
         if self.current_token.kind == Types::TOKEN_LPARENT {
             return self.parse_function_call();
@@ -324,10 +387,7 @@ impl<'a> Parser<'a> {
             node.scope = Some(self.scope.clone()); 
             return node; 
         }
-
-        let mut ast = AST::new(Ast_Type::AST_VARIABLE);
-        ast.variable_name = Some(n);
-        ast.scope = Some(self.scope.clone());
+        
         ast
     }
 

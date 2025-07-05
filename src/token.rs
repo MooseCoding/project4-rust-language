@@ -8,6 +8,7 @@ pub enum Types {
         TOKEN_LESS_THAN, TOKEN_GEQ, TOKEN_LEQ, TOKEN_EE, TOKEN_INCREMENT,
         TOKEN_DECREMENT, TOKEN_NEQ, TOKEN_OR, TOKEN_AND, TOKEN_NOT,
         TOKEN_RBOX, TOKEN_LBOX, // [ & ] symbols
+        TOKEN_DOT, 
 }
 
 #[derive(Clone, PartialEq, Debug)]

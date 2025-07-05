@@ -98,6 +98,11 @@ impl Lexer {
                 self.advance();
                 Token::new(Types::TOKEN_STRING, string)
             }
+            Some('.') => {
+                self.advance();
+
+                Token::new(Types::TOKEN_DOT, ".".to_string())
+            }
             Some('!') => {
                 self.advance();
                 

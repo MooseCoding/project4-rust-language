@@ -11,8 +11,9 @@ We're gonna do a programming language written in Rust. I've done this priorlyin 
 - [x] For loops
 - [ ] Classes
 - [x] Boolean Logic
-- [ ] Libraries (std, std::math, std::time. std::string)
-- [ ] Arrays
+- [x] Libraries 
+- [x] Arrays
+- [ ] In depth arrays (returning arrays, operators, mutability)
 - [ ] Breaking
 
 I was going to do more, but the current structure is kinda cooked so I'll add the rest to my next programming language (which I'll write in C). 

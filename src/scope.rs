@@ -9,6 +9,7 @@ pub type SharedScope = Rc<RefCell<Scope>>;
 pub struct Scope {
     pub function_definitions: Vec<AST>,
     pub variable_definitions: Vec<AST>,
+    pub imports: Vec<AST>, 
     pub parent: Option<SharedScope>
 }
 
@@ -32,6 +33,7 @@ impl Scope {
         Scope {
             function_definitions: Vec::new(),
             variable_definitions: Vec::new(),
+            imports: Vec::new(), 
             parent: None::<SharedScope>,
         }
     }
@@ -40,6 +42,7 @@ impl Scope {
         Scope {
             function_definitions: Vec::new(),
             variable_definitions: Vec::new(),
+            imports: Vec::new(), 
             parent: Some(parent),
         }
     }
@@ -132,5 +135,31 @@ impl Scope {
         else {
             panic!("Variable {} not found in any scope", name);
         }
+    }
+
+    pub fn add_import(&mut self, import: &AST) {
+        self.imports.push(import.clone());
+    }
+
+    pub fn get_import(&self, import_name: &str) -> Option<&AST>  {
+        for i in &self.imports {
+            if let Some(name) = &i.variable_name {
+                if name == import_name {
+                    return Some(i) 
+                }
+            }
+        }
+
+        None
+    }
+
+   pub fn update_import(&mut self, mut import: AST) {
+        for i in &mut self.imports {
+            if import.variable_name.as_ref().unwrap() == i.variable_name.as_ref().unwrap() {
+                *i = import.clone();
+                return;
+            }
+        }
+        self.imports.push(import);
     }
 }
