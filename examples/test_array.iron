@@ -1,0 +1,6 @@
+int[] a = [10, 20];
+println(a);
+
+a[0] = 30;
+
+println(a); 
