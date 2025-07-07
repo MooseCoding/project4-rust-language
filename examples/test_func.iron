@@ -1,7 +1,0 @@
-fun p(int x) {
-    for (int i = 0; i < x; i++) {
-        println(i + x); 
-    }
-}
-
-p(10); 

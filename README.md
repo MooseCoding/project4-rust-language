@@ -9,14 +9,13 @@ We're gonna do a programming language written in Rust. I've done this priorlyin 
 - [x] If statements
 - [x] While loops
 - [x] For loops
-- [ ] Classes
 - [x] Boolean Logic
 - [x] Libraries 
 - [x] Arrays
-- [ ] In depth arrays (returning arrays, operators, mutability)
-- [ ] Breaking
+- [x] Breaking
+- [x] Example code for every feature 
 
-I was going to do more, but the current structure is kinda cooked so I'll add the rest to my next programming language (which I'll write in C). 
+I was going to do more, but the current structure is kinda cooked so I'll add the rest to my next programming language (which I'll write in C & have it be compiled straight to ASM). 
 
 
 # Installation 
@@ -25,5 +24,5 @@ Make sure that you have rust and cargo installed
 
 On a unix system to run as an interpreter run 
 ```rust 
-cargo run -- examples/file.iron 
+cargo run -- examples/{file}.iron 
 ```

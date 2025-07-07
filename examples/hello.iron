@@ -1,9 +1,1 @@
-import "test"; 
-import <math>;
-
-float y = math.sqrt(4);
-println(y); 
-
-float x = test.add(4, 2);
-
-println(x); 
+println("Hello World!");

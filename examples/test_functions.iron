@@ -1,0 +1,41 @@
+import <math>;
+
+println("This is going to test the standard import, function creation,
+boolean logic, while loops, and pretty much combining code elements
+");
+
+println(); 
+
+fun is_prime(int n) {
+    if (n <= 1) {
+        return false;
+    }
+
+    int i = 2;
+
+    while (i <= math.sqrt(n)) {
+        if (n % i == 0) {
+            return false;
+        }
+        
+        i++;
+    }
+
+    return true;
+}
+
+fun fibbonaci(int n) {
+    if (n == 0) {
+        return 0;
+    }
+
+    if (n == 1) {
+        return 1;
+    }
+
+    return fibbonaci(n - 1) + fibbonaci(n - 2); 
+}
+
+println("Is 3 prime: ", is_prime(3)); 
+println("Is 25 prime: ", is_prime(25)); 
+println("Fib(10): ", fibbonaci(10)); 

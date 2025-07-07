@@ -31,7 +31,7 @@ impl<'a> Parser<'a> {
             self.current_token = self.lexer.next_token();
         }
         else {
-            panic!("Unexpected token parser {:?} got {:?}", t, self.current_token.kind);
+            panic!("Unexpected token attempted to eat: {:?} got {:?} instead", t, self.current_token.kind);
         }
     }
 
@@ -79,14 +79,25 @@ impl<'a> Parser<'a> {
             "while" => self.parse_while(), 
             "for" => self.parse_for(), 
             "import" => self.parse_import(), 
+            "break" => self.parse_break(), 
             _ => self.parse_variable(),
         }
+    }
+
+    pub fn parse_break(&mut self) -> AST {        
+        self.eat(Types::TOKEN_ID);
+
+        let mut node = AST::new(Ast_Type::AST_BREAK);
+        node.scope = Some(self.scope.clone()); 
+
+        node 
     }
 
     pub fn parse_import(&mut self) -> AST {
         self.eat(Types::TOKEN_ID);
 
         let mut node = AST::new(Ast_Type::AST_IMPORT);
+
 
         if self.current_token.kind == Types::TOKEN_LESS_THAN {
             self.eat(Types::TOKEN_LESS_THAN);
@@ -102,7 +113,7 @@ impl<'a> Parser<'a> {
 
         }
         else {
-            let file = self.current_token.value.clone(); 
+            let file = self.current_token.value.clone();
 
             node.string_value = Some(file.clone());
             node.variable_name = Some(file.clone());
@@ -197,7 +208,7 @@ impl<'a> Parser<'a> {
     pub fn parse_multiplication(&mut self) -> AST {
         let mut left = self.parse_factor();
 
-        while matches!(self.current_token.kind, Types::TOKEN_ASTERISK | Types::TOKEN_FSLASH) {
+        while matches!(self.current_token.kind, Types::TOKEN_ASTERISK | Types::TOKEN_FSLASH | Types::TOKEN_PERCENT) {
             let op = self.current_token.kind.clone();
             self.eat(op.clone());
 
@@ -282,6 +293,13 @@ impl<'a> Parser<'a> {
                 node.scope = Some(self.scope.clone());
                 node
             }
+            Types::TOKEN_COMMENT_START => {
+                while self.current_token.kind.clone() != Types::TOKEN_COMMENT_END {
+                    self.eat(self.current_token.kind.clone()); 
+                }
+
+                return AST::new(Ast_Type::AST_NOOP); 
+            }
             _ => panic!("Unexpected token in factor {:?}", self.current_token.clone()),
         }
     }
@@ -337,6 +355,7 @@ impl<'a> Parser<'a> {
 
             if self.current_token.kind == Types::TOKEN_LPARENT {
                 node.dot_right = Some(Box::new(self.parse_function_call()));
+                node.scope = Some(self.scope.clone()); 
             }
             else {
                 let mut right = AST::new(Ast_Type::AST_VARIABLE);
@@ -387,7 +406,7 @@ impl<'a> Parser<'a> {
             node.scope = Some(self.scope.clone()); 
             return node; 
         }
-        
+
         ast
     }
 
@@ -665,7 +684,6 @@ impl<'a> Parser<'a> {
 
     pub fn parse_comparison(&mut self) -> AST {
         let mut left = self.parse_term();
-
 
         while matches!(self.current_token.kind, 
             Types::TOKEN_GREATER_THAN |

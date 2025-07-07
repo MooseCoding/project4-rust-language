@@ -1,0 +1,6 @@
+println("This is going to iterate from [0, 10) and print the corresponding value");
+println(); 
+
+for (int i = 0; i < 10; i++) {
+    println(i); 
+}

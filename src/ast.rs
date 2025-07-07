@@ -27,6 +27,7 @@ pub enum Ast_Type {
     AST_ARRAY_ASSIGN, 
     AST_IMPORT,
     AST_DOT, 
+    AST_BREAK, 
 }
 #[derive(Clone, PartialEq, Debug)]
 pub enum Data_Type {

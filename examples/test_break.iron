@@ -1,0 +1,7 @@
+int i = 0;
+
+println("If the program stops, it shows that the code breaks properly"); 
+
+while (i < 2) {
+    break; 
+}

@@ -141,15 +141,17 @@ impl Scope {
         self.imports.push(import.clone());
     }
 
-    pub fn get_import(&self, import_name: &str) -> Option<&AST>  {
+    pub fn get_import(&self, import_name: &str) -> Option<AST>  {
         for i in &self.imports {
             if let Some(name) = &i.variable_name {
                 if name == import_name {
-                    return Some(i) 
+                    return Some(i.clone()) 
                 }
             }
         }
-
+        if let Some(parent) = &self.parent {
+            return parent.borrow().get_import(import_name);
+        }
         None
     }
 
@@ -161,5 +163,27 @@ impl Scope {
             }
         }
         self.imports.push(import);
+    }
+
+    pub fn print_all_imports(&self) {
+        for import in &self.imports {
+            let name = import.variable_name.as_ref().unwrap();
+            println!("Import {}", name); 
+        }
+    }
+
+    pub fn print_all(&self) {
+        for import in &self.imports {
+            let name = import.variable_name.as_ref().unwrap();
+            println!("Import {}", name); 
+        }
+        for func in &self.function_definitions {
+            let f_name = func.function_definition_name.as_ref().unwrap();
+            println!("Func name {}", f_name);
+        }
+        for var in &self.variable_definitions {
+            let name = var.variable_definition_variable_name.as_ref().unwrap();
+            println!("Var {}", name); 
+        }
     }
 }

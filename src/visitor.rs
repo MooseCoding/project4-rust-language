@@ -34,6 +34,7 @@ impl Visitor {
     }
 
     pub fn visit(&mut self, node: &mut AST) -> AST {
+        // println!("Visintg {:#?}", node.ast_type); 
         match node.ast_type {
             Ast_Type::AST_VARIABLE => self.visit_variable(node),
             Ast_Type::AST_COMPOUND => self.visit_compound(node),
@@ -64,7 +65,10 @@ impl Visitor {
         match left.ast_type {
             Ast_Type::AST_VARIABLE | Ast_Type::AST_IMPORT => {
                 let name = left.variable_name.as_ref().unwrap();
-                let scope = node.scope.as_ref().unwrap();
+
+                let scope = node.scope.clone().unwrap();
+
+                self.set_scope_recursively(node, scope.clone());
 
                 if let Some(import) = scope.borrow().get_import(name) {
                     let f = node.dot_right.as_ref().unwrap();
@@ -102,9 +106,16 @@ impl Visitor {
 
     pub fn visit_import(&mut self, node: &mut AST) -> AST {
         let lib = node.variable_name.as_ref().unwrap().clone();
-        let scope = node.scope.clone().expect("Import node missing scope");
+        let scope = node.scope.clone().expect("Import node missing scope"); 
 
         if node.is_builtin.unwrap_or(false) {
+            let mut import_wrapper = AST::new(Ast_Type::AST_IMPORT);
+            import_wrapper.variable_name = Some(lib.clone());
+            import_wrapper.scope = Some(scope.clone());
+            import_wrapper.is_builtin = Some(true);
+
+            scope.borrow_mut().update_import(import_wrapper.clone());
+
             return AST::new(Ast_Type::AST_NOOP);
         }
 
@@ -150,12 +161,13 @@ impl Visitor {
         match var_def.ast_type {
             Ast_Type::AST_VARIABLE_DEF => {
                 if let Some(val) = &var_def.variable_definition_value {
-                    return *val.clone();
+                    return self.visit(&mut *val.clone());
                 } else {
                     panic!("Variable '{}' has no value", name);
                 }
             }
             Ast_Type::AST_ARRAY_DEF => var_def.clone(),
+            Ast_Type::AST_INT | Ast_Type::AST_FLOAT | Ast_Type::AST_BOOL => var_def.clone(),
             _ => panic!("Unknown variable type '{}'", name),
         }
     }
@@ -207,6 +219,7 @@ impl Visitor {
             }
 
             let mut value = arg.clone();
+
             value.scope = Some(new_scope.clone()); 
 
             let mut var_def = AST::new(Ast_Type::AST_VARIABLE_DEF);
@@ -220,6 +233,7 @@ impl Visitor {
 
         let mut body = def.function_definition_body.as_ref().expect("Missing body").clone();
         self.set_scope_recursively(&mut body, new_scope.clone());
+
         let result = self.visit(&mut body);
 
         if result.ast_type == Ast_Type::AST_RETURN {
@@ -234,6 +248,29 @@ impl Visitor {
         AST::new(Ast_Type::AST_NOOP)
     }
 
+    pub fn visit_if(&mut self, node: &mut AST) -> AST {
+        let condition = self.visit(node.if_condition.as_mut().expect("No if condition"));
+
+        let is_true = match condition.ast_type {
+            Ast_Type::AST_BOOL => condition.bool_value.unwrap_or(false),
+            Ast_Type::AST_INT => condition.int_value.unwrap_or(0) != 0,
+            Ast_Type::AST_FLOAT => condition.float_value.unwrap_or(0.0) != 0.0,
+            _ => panic!("Invalid type for if statement"),
+        };
+
+        let result = if is_true {
+            self.visit(node.if_body.as_mut().expect("Missing if body"))
+        }
+        else if let Some(e) = node.else_body.as_mut() {
+            self.visit(e)
+        }
+        else {
+            AST::new(Ast_Type::AST_NOOP)
+        };
+
+        result
+    }
+    
     pub fn call_library_function(&mut self,module: &str,function: &str,args: Vec<AST>,scope: &Option<SharedScope>) -> AST {
         match module {
             "math" => match function {
@@ -265,6 +302,20 @@ impl Visitor {
                     });
 
                     return result;
+                }
+                "floor" => {
+                    let num = self.visit(&mut args[0].clone());
+                    let mut result = AST::new(Ast_Type::AST_FLOAT);
+                    result.float_init = Some(true);
+                    result.data_type = Data_Type::FLOAT;
+
+                    result.float_value = Some(match num.ast_type {
+                        Ast_Type::AST_FLOAT => num.float_value.unwrap().floor(),
+                        Ast_Type::AST_INT => (num.int_value.unwrap() as f64).floor(),
+                        _ => panic!("Floor requires an integer or a float"),
+                    });
+                    
+                    return result; 
                 }
                 _ => panic!("Function `{}` not found in <math>", function),
             },
@@ -301,6 +352,9 @@ impl Visitor {
                     let result = self.visit(stmt);
                     if result.ast_type == Ast_Type::AST_RETURN {
                         return result;
+                    }
+                    else if result.ast_type == Ast_Type::AST_BREAK {
+                        return AST::new(Ast_Type::AST_BREAK); 
                     }
                 }
             }
@@ -369,14 +423,47 @@ impl Visitor {
                 self.set_scope_recursively(element, scope.clone());
             }
         }
-    }
+    
+        if let Some(i) = node.if_body.as_mut() {
+            self.set_scope_recursively(i, scope.clone());
+        }
 
+        if let Some(i) = node.if_condition.as_mut() {
+            self.set_scope_recursively(i, scope.clone());
+        }
+
+        if let Some(e) = node.else_body.as_mut() {
+            self.set_scope_recursively(e, scope.clone());
+        }
+
+        if let Some(w) = node.while_body.as_mut() {
+            self.set_scope_recursively(w, scope.clone());
+        }
+
+        if let Some(w) = node.while_condition.as_mut() {
+            self.set_scope_recursively(w, scope.clone());
+        }
+    
+        if let Some(l) = node.dot_left.as_mut() {
+            self.set_scope_recursively(l, scope.clone());
+        }
+
+        if let Some(r) = node.dot_right.as_mut() {
+            self.set_scope_recursively(r, scope.clone());
+        }
+
+        if let Some(i) = node.imported_ast.as_mut() {
+            self.set_scope_recursively(i, scope.clone());
+        }
+    }
+   
     pub fn visit_binary(&mut self, node: &mut AST) -> AST {
         let op = node.operator.as_ref().expect("Missing operator");
 
         let left_eval = self.visit(node.left.as_mut().expect("Missing left operand"));
         let right_eval = self.visit(node.right.as_mut().expect("Missing right operand"));
 
+        // Handle boolean logic
         if matches!(op, Types::TOKEN_OR | Types::TOKEN_AND) {
             let l_bool = match left_eval.ast_type {
                 Ast_Type::AST_BOOL => left_eval.bool_value.unwrap_or(false),
@@ -398,7 +485,9 @@ impl Visitor {
                 _ => unreachable!(),
             };
 
-            return AST::from_bool(result);
+            let mut result_ast = AST::from_bool(result);
+            result_ast.scope = Some(node.scope.clone().unwrap_or_else(|| Rc::new(RefCell::new(crate::scope::Scope::new()))));
+            return result_ast;
         }
 
         if *op == Types::TOKEN_ADD {
@@ -410,81 +499,72 @@ impl Visitor {
             }
         }
 
-        let (l_val, r_val) = (
-            left_eval.float_value.or_else(|| left_eval.int_value.map(|v| v as f64)),
-            right_eval.float_value.or_else(|| right_eval.int_value.map(|v| v as f64)),
-        );
-
-        match (l_val, r_val) {
-            (Some(l), Some(r)) => {
-                let result = match op {
-                    Types::TOKEN_ADD => l + r,
-                    Types::TOKEN_SUBTRACT => l - r,
-                    Types::TOKEN_ASTERISK => l * r,
-                    Types::TOKEN_FSLASH => l / r,
-                    Types::TOKEN_GREATER_THAN => return AST::from_bool(l > r),
-                    Types::TOKEN_LESS_THAN => return AST::from_bool(l < r),
-                    Types::TOKEN_LEQ => return AST::from_bool(l <= r),
-                    Types::TOKEN_GEQ => return AST::from_bool(l >= r),
-                    Types::TOKEN_EE => return AST::from_bool(l == r),
-                    _ => panic!("Unknown operator"),
-                };
-
-                let result_type = if left_eval.float_init.unwrap_or(false)
-                    || right_eval.float_init.unwrap_or(false)
-                {
-                    Data_Type::FLOAT
-                } else {
-                    Data_Type::INT
-                };
-
-                let mut node = match result_type {
-                    Data_Type::FLOAT => {
-                        let mut n = AST::new(Ast_Type::AST_FLOAT);
-                        n.float_value = Some(result);
-                        n.float_init = Some(true);
-                        n.data_type = Data_Type::FLOAT;
-                        n.scope = Some(node.scope.clone().unwrap_or_else(|| Rc::new(RefCell::new(crate::scope::Scope::new()))));
-                        n
-                    }
-                    Data_Type::INT => {
-                        let mut n = AST::new(Ast_Type::AST_INT);
-                        n.int_value = Some(result as i32);
-                        n.int_init = Some(true);
-                        n.data_type = Data_Type::INT;
-                        n.scope = Some(node.scope.clone().unwrap_or_else(|| Rc::new(RefCell::new(crate::scope::Scope::new()))));
-                        n
-                    }
-                    _ => panic!("Unsupported type"),
-                };
-
-                node
-            }
-            _ => panic!("Invalid operands to binary expression"),
-        }
-    }
-
-    pub fn visit_if(&mut self, node: &mut AST) -> AST {
-        let condition = self.visit(node.if_condition.as_mut().expect("No if condition"));
-
-        let is_true = match condition.ast_type {
-            Ast_Type::AST_BOOL => condition.bool_value.unwrap_or(false),
-            Ast_Type::AST_INT => condition.int_value.unwrap_or(0) != 0,
-            Ast_Type::AST_FLOAT => condition.float_value.unwrap_or(0.0) != 0.0,
-            _ => panic!("Invalid type for if statement"),
+        let l_val = match left_eval.ast_type {
+            Ast_Type::AST_FLOAT => left_eval.float_value.unwrap(),
+            Ast_Type::AST_INT => left_eval.int_value.unwrap() as f64,
+            _ => panic!("Invalid left operand type"),
         };
 
-        if is_true {
-            self.visit(node.if_body.as_mut().expect("Missing if body"))
+        let r_val = match right_eval.ast_type {
+            Ast_Type::AST_FLOAT => right_eval.float_value.unwrap(),
+            Ast_Type::AST_INT => right_eval.int_value.unwrap() as f64,
+            _ => panic!("Invalid right operand type"),
+        };
+
+        let cmp_result = match op {
+            Types::TOKEN_GREATER_THAN => Some(l_val > r_val),
+            Types::TOKEN_LESS_THAN => Some(l_val < r_val),
+            Types::TOKEN_LEQ => Some(l_val <= r_val),
+            Types::TOKEN_GEQ => Some(l_val > r_val),
+            Types::TOKEN_EE => Some((l_val - r_val).abs() < 1e-8),
+            _ => None,
+        };
+
+        if let Some(bool_val) = cmp_result {
+            let mut b = AST::from_bool(bool_val);
+            b.scope = Some(node.scope.clone().unwrap_or_else(|| Rc::new(RefCell::new(crate::scope::Scope::new()))));
+            return b;
         }
-        else if let Some(e) = node.else_body.as_mut() {
-            self.visit(e)
-        }
-        else {
-            AST::new(Ast_Type::AST_NOOP)
-        }
+
+        let result = match op {
+            Types::TOKEN_ADD => l_val + r_val,
+            Types::TOKEN_SUBTRACT => l_val - r_val,
+            Types::TOKEN_ASTERISK => l_val * r_val,
+            Types::TOKEN_FSLASH => l_val / r_val,
+            Types::TOKEN_PERCENT => l_val % r_val,
+            _ => panic!("Unknown operator"),
+        };
+
+        let result_type = if left_eval.float_init.unwrap_or(false)
+            || right_eval.float_init.unwrap_or(false)
+        {
+            Data_Type::FLOAT
+        } else {
+            Data_Type::INT
+        };
+
+        let mut result_node = match result_type {
+            Data_Type::FLOAT => {
+                let mut n = AST::new(Ast_Type::AST_FLOAT);
+                n.float_value = Some(result);
+                n.float_init = Some(true);
+                n.data_type = Data_Type::FLOAT;
+                n
+            }
+            Data_Type::INT => {
+                let mut n = AST::new(Ast_Type::AST_INT);
+                n.int_value = Some(result as i32);
+                n.int_init = Some(true);
+                n.data_type = Data_Type::INT;
+                n
+            }
+            _ => panic!("Unsupported result type"),
+        };
+
+        result_node.scope = Some(node.scope.clone().unwrap_or_else(|| Rc::new(RefCell::new(crate::scope::Scope::new()))));
+        result_node
     }
-    
+
     pub fn visit_return(&mut self, node: &mut AST) -> AST {
         if let Some(ret) = node.return_value.as_mut() {
             let r = self.visit(ret);
@@ -571,22 +651,34 @@ impl Visitor {
     }
 
     pub fn visit_while(&mut self, node: &mut AST) -> AST {
+        let cond_node = node.while_condition.as_mut().expect("Missing while condition");
+        let body_node = node.while_body.as_mut().expect("Missing while body");
+
         loop {
-            let condition = self.visit(&mut *node.while_condition.clone().unwrap());
-                
+            let condition = self.visit(cond_node);
+
             let is_true = match condition.ast_type {
                 Ast_Type::AST_BOOL => condition.bool_value.unwrap_or(false),
                 Ast_Type::AST_INT => condition.int_value.unwrap_or(0) != 0,
                 Ast_Type::AST_FLOAT => condition.float_value.unwrap_or(0.0) != 0.0,
-                _ => panic!("Invalid type for if statement"),
+                _ => panic!("Invalid type for while condition"),
             };
 
             if !is_true {
                 break;
             }
 
-            self.visit(&mut *node.while_body.clone().unwrap());
+            let result = self.visit(body_node);
+
+            if result.ast_type == Ast_Type::AST_RETURN {
+                return result;  
+            }
+
+            if result.ast_type == Ast_Type::AST_BREAK {
+                return result; 
+            }
         }
+
         AST::new(Ast_Type::AST_NOOP)
     }
 
@@ -662,7 +754,11 @@ impl Visitor {
             let mut body = *node.for_body.clone().unwrap(); 
             self.set_scope_recursively(&mut body, loop_scope.clone()); 
             
-            self.visit(&mut body);
+            let result = self.visit(&mut body);
+            
+            if result.ast_type == Ast_Type::AST_RETURN {
+                break; 
+            }
             
             let mut increment = *node.for_increment.clone().unwrap();
             self.set_scope_recursively(&mut increment, loop_scope.clone()); 

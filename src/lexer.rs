@@ -98,6 +98,21 @@ impl Lexer {
                 self.advance();
                 Token::new(Types::TOKEN_STRING, string)
             }
+            Some('%') => {
+                self.advance();
+                Token::new(Types::TOKEN_PERCENT, "%".to_string())
+            }
+            Some('/') => {
+                self.advance();
+
+                if self.current_char == Some('*') {
+                    self.advance(); 
+                    return Token::new(Types::TOKEN_COMMENT_START, "/*".to_string());
+                }
+
+                Token::new(Types::TOKEN_FSLASH, "/".to_string())
+            }
+
             Some('.') => {
                 self.advance();
 
@@ -134,6 +149,7 @@ impl Lexer {
             Some('=') => {
                 self.advance();
                 if self.current_char == Some('=') {
+                    self.advance(); 
                     return Token::new(Types::TOKEN_EE, "==".to_string());
                 }
                 Token::new(Types::TOKEN_EQUALS, "=".to_string())
@@ -168,6 +184,12 @@ impl Lexer {
             }
             Some('*') => {
                 self.advance();
+
+                if self.current_char == Some('/') {
+                    self.advance(); 
+                    Token::new(Types::TOKEN_COMMENT_END, "*/".to_string()); 
+                }
+
                 Token::new(Types::TOKEN_ASTERISK, "*".to_string())
             }
             Some('(') => {
