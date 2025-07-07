@@ -20,12 +20,16 @@ I was going to do more, but the current structure is kinda cooked so I'll add th
 
 # Installation 
 
-Make sure that you have rust and cargo installed
+Make sure that you have rust and cargo installed, download or clone the project into a folder:
 
 On a unix system to run as an interpreter run 
 ```rust 
 cargo run -- examples/{file}.iron 
 ```
+
+You can run any file from the examples folder and get a nice output :) 
+
+# Basic Docs
 
 Libraries are all in examples/lib and are noted to be 
 a library file with the usage of a .steel file
@@ -47,3 +51,5 @@ and using non standard libraries is like
 ```
 import "trig";
 ```
+
+The other example files should give an idea of the syntax and other features of the language. 
