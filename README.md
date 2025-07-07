@@ -26,3 +26,6 @@ On a unix system to run as an interpreter run
 ```rust 
 cargo run -- examples/{file}.iron 
 ```
+
+Libraries are all in examples/lib and are noted to be 
+a library file with the usage of a .steel file
