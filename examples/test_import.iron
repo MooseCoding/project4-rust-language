@@ -1,8 +1,13 @@
 import "trig"; 
 
+println("This file is importing the trig library, and then printing values for certain trig functions"); 
+
 println("Sin(0) ", trig.sin(0));
 println("Sin(pi/2) ", trig.sin(3.14/2));
 println("Sin(pi) ", trig.sin(3.14));
 println("Cos(0) ", trig.cos(0)); 
 println("Cos(pi/2) ", trig.cos(3.14/2));
 println("Cos(pi) ", trig.cos(3.14));  
+println("Sin(2) ", trig.sin(2));
+println("e^0 ", trig.e_x(0));
+println("e^2 ", trig.e_x(2));

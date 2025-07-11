@@ -105,9 +105,26 @@ impl Lexer {
             Some('/') => {
                 self.advance();
 
-                if self.current_char == Some('*') {
+                 if self.current_char == Some('*') {
                     self.advance(); 
-                    return Token::new(Types::TOKEN_COMMENT_START, "/*".to_string());
+
+                    loop {
+                        match self.current_char {
+                            Some('*') => {
+                                self.advance(); 
+                                if self.current_char == Some('/') {
+                                    self.advance(); 
+                                    break; 
+                                }
+                            }
+                            Some(_) => {
+                                self.advance();
+                            }
+                            None => break, 
+                        }
+                    }
+
+                    return self.next_token(); 
                 }
 
                 Token::new(Types::TOKEN_FSLASH, "/".to_string())
@@ -185,11 +202,6 @@ impl Lexer {
             Some('*') => {
                 self.advance();
 
-                if self.current_char == Some('/') {
-                    self.advance(); 
-                    Token::new(Types::TOKEN_COMMENT_END, "*/".to_string()); 
-                }
-
                 Token::new(Types::TOKEN_ASTERISK, "*".to_string())
             }
             Some('(') => {
@@ -238,6 +250,10 @@ impl Lexer {
             Some(']') => {
                 self.advance(); 
                 Token::new(Types::TOKEN_RBOX, "]".to_string())
+            }
+            Some('^') => {
+                self.advance(); 
+                Token::new(Types::TOKEN_CARROT, "^".to_string()) 
             }
             Some(c) if c.is_ascii_digit() => self.collect_num(),
             Some(c) if c.is_alphabetic() || c == '_'  => self.collect_id(),

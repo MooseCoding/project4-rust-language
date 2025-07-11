@@ -1,5 +1,6 @@
 use crate::scope::{SharedScope};
 use crate::token::{Types};
+use std::collections::HashMap; 
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum Ast_Type {
@@ -28,6 +29,9 @@ pub enum Ast_Type {
     AST_IMPORT,
     AST_DOT, 
     AST_BREAK, 
+    AST_CLASS_DEF,
+    AST_CLASS_INSTANCE,
+    AST_CLASS_ACCESS, // Yeah technically this is an AST_DOT but its nicer if its an access for a class
 }
 #[derive(Clone, PartialEq, Debug)]
 pub enum Data_Type {
@@ -37,6 +41,7 @@ pub enum Data_Type {
     VOID,
     CHAR, 
     BOOL, 
+    CUSTOM(String) , 
     ARRAY(Box<Data_Type>), 
 }
 
@@ -110,6 +115,14 @@ pub struct AST {
 
     pub is_builtin: Option<bool>, 
     pub imported_ast: Option<Box<AST>>, 
+
+    pub class_definition_name: Option<String>,
+    pub class_definition_body: Option<Box<AST>>,
+    pub class_definition_args: Option<Vec<AST>>, 
+
+    pub class_name: Option<String>,
+    pub class_fields: Option<HashMap<String, AST>>, 
+    pub class_args: Option<Vec<AST>>, 
 }
 
 impl AST {
@@ -180,6 +193,15 @@ impl AST {
 
             is_builtin:None, 
             imported_ast:None, 
+            
+            class_definition_body: None,
+            class_definition_name:None,
+            class_definition_args:None, 
+
+
+            class_name:None, 
+            class_args:None, // Only used on init 
+            class_fields:None, // Our fancy dot implementation p much
         }
     }
 

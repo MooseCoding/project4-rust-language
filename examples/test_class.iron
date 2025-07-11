@@ -1,0 +1,31 @@
+class Shop(int apple_count, int apple_cost) {
+    int apples = apple_count; 
+    int cost_per_apple = apple_cost;
+    int money = 0;
+    
+    fun buy_apple(int quantity) {
+        if (apples < quantity) {
+            money = money + cost_per_apple * apples;
+            apples = 0; 
+            return false; 
+        }
+        else {
+            money = money + cost_per_apple * quantity;
+            apples = apples - quantity;
+            return true; 
+        }
+    }
+
+    fun print_stats() {
+        println("Apples: ", apples);
+        println("Cost per apple: ", cost_per_apple);
+        println("Money: ", money);
+    }
+}
+
+Shop apple_store = new Shop(10, 2);
+
+bool status = apple_store.buy_apple(15); 
+println("Was order completed: ", status); 
+
+apple_store.print_stats();  

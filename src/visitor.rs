@@ -34,7 +34,7 @@ impl Visitor {
     }
 
     pub fn visit(&mut self, node: &mut AST) -> AST {
-        // println!("Visintg {:#?}", node.ast_type); 
+        // println!("Visiting {:#?}", node.ast_type); 
         match node.ast_type {
             Ast_Type::AST_VARIABLE => self.visit_variable(node),
             Ast_Type::AST_COMPOUND => self.visit_compound(node),
@@ -51,11 +51,206 @@ impl Visitor {
             Ast_Type::AST_ARRAY_ACCESS => self.visit_array_access(node),
             Ast_Type::AST_DOT => self.visit_dot(node),
             Ast_Type::AST_IMPORT => self.visit_import(node), 
+            Ast_Type::AST_CLASS_INSTANCE => self.visit_class_creation(node),
+            Ast_Type::AST_CLASS_ACCESS => self.visit_class_access(node), 
             _ => node.clone(),
         }
     }
 
-   pub fn visit_dot(&mut self, node: &mut AST) -> AST {
+    pub fn visit_class_creation(&mut self, node: &mut AST) -> AST {
+        let name = node.class_name.as_ref().expect("Missing class name");
+
+        let empty_vec = &vec![];
+
+        let args = node.class_args.as_ref().unwrap_or(empty_vec).clone(); 
+        let mut eval_args = args 
+            .into_iter()
+            .map(|mut arg| { return self.visit(&mut arg);})
+            .collect::<Vec<_>>();
+
+        let scope = node.scope.as_ref().expect("Class instanitation missing scope");
+
+        let def = scope.borrow().get_class_definition(&node.class_name.as_ref().unwrap()).unwrap_or_else(|| panic!("Class {} not defined", name));
+
+        let params = def.class_definition_args.as_ref().unwrap_or(empty_vec); 
+
+        if eval_args.len() != params.len() {
+            panic!(
+                "Class instationation {} expected {} arguments, got {}",
+                name,
+                params.len(),
+                eval_args.len()
+            );
+        }
+
+        let class_scope = def.scope.as_ref().expect("Class def missing scope");
+        let new_scope = Rc::new(RefCell::new(Scope::new_with_parent(class_scope.clone()))); 
+
+        for (param, arg) in params.iter().zip(eval_args.iter()) {
+            let expected = param.variable_type.as_ref().unwrap();
+
+            if param.variable_type.as_ref() != Some(&arg.data_type) && !(expected == &Data_Type::FLOAT && arg.data_type == Data_Type::INT){
+                panic!(
+                    "Function {} argument type mismatch: expected {:?}, got {:?}",
+                    name, param.variable_type, arg.data_type
+                );
+            }
+
+            let mut value = arg.clone();
+
+            value.scope = Some(new_scope.clone()); 
+
+            let mut var_def = AST::new(Ast_Type::AST_VARIABLE_DEF);
+            var_def.variable_definition_variable_name = param.variable_definition_variable_name.clone(); 
+            var_def.variable_definition_value = Some(Box::new(value));
+            var_def.variable_type = param.variable_type.clone();
+            var_def.scope = Some(new_scope.clone());
+
+            new_scope.borrow_mut().update_variable_definition(param.variable_definition_variable_name.as_ref().unwrap().clone(), var_def);
+        }
+        let mut body = def.class_definition_body.as_ref().expect("Missing body").clone();
+        self.set_scope_recursively(&mut body, new_scope.clone());
+
+        AST::new(Ast_Type::AST_NOOP)
+    }
+
+    pub fn visit_class_access(&mut self, node: &mut AST) -> AST {
+        let instance = node.dot_left.as_mut().unwrap(); 
+        let instance_name = instance.variable_name.as_ref().unwrap();
+        
+        let instance_def = node.scope.clone().unwrap().borrow()
+            .get_variable_definition(instance_name)
+            .unwrap_or_else(|| panic!("No instance {} found", instance_name));
+
+        let class_name = instance_def.class_name.as_ref()
+            .unwrap_or_else(|| panic!("Instance {} has no associated class", instance_name));
+
+        let class_def = node.scope.clone().unwrap().borrow()
+            .get_class_definition(class_name)
+            .unwrap_or_else(|| panic!("No class definition found for {}", class_name));
+
+        let class_scope = class_def.scope.as_ref()
+            .unwrap_or_else(|| panic!("Instance {} has no scope", instance_name));
+
+        match node.dot_right.as_ref().unwrap().ast_type {
+            Ast_Type::AST_VARIABLE => {
+                if node.reassign_value.is_some() {
+                    let name = node.dot_right.as_ref().unwrap().variable_name.as_ref().unwrap();
+
+                    let mut var_def = class_scope.borrow().get_variable_definition(name)
+                        .unwrap_or_else(|| panic!("Undefined variable: {}", name));
+
+                    if node.reassign_value.is_some() {
+                        var_def.variable_definition_value = Some(Box::new(*node.reassign_value.as_ref().unwrap().clone()));
+                    }
+
+                    class_scope.borrow_mut().update_variable_definition(name.to_string(), var_def.clone()); 
+
+                    let r = match var_def.ast_type {
+                        Ast_Type::AST_VARIABLE_DEF => {
+                            if let Some(val) = &var_def.variable_definition_value {
+                                return self.visit(&mut *val.clone());
+                            } else {
+                                panic!("Variable '{}' has no value", name);
+                            }
+                        }
+                        Ast_Type::AST_ARRAY_DEF => var_def.clone(),
+                        Ast_Type::AST_INT | Ast_Type::AST_FLOAT | Ast_Type::AST_BOOL => var_def.clone(),
+                        _ => panic!("Unknown variable type '{}'", name),
+                    };
+
+                    return r;
+                }
+                
+                let name = node.dot_right.as_ref().unwrap().variable_name.as_ref().unwrap();
+
+                if let Some(mut val) = class_scope.borrow().get_variable_definition(&name) {
+                    return self.visit(&mut val.variable_definition_value.unwrap().clone()); 
+                }
+
+                panic!("Value not found for node.dot_right");
+            }
+            Ast_Type::AST_FUNCTION_CALL => {
+                let a = node.dot_right.as_ref().unwrap(); 
+                let name = a.function_call_name.as_ref().expect("Missing function name");
+
+                let empty_vec = &vec![];
+
+                let args_vec = a.function_call_args.as_ref().unwrap_or(empty_vec).clone();
+                let mut evaluated_args = args_vec
+                    .into_iter()
+                    .map(|mut arg| self.visit(&mut arg))
+                    .collect::<Vec<_>>();
+
+
+                if let Some(f) = self.builtins.get(name) {
+                    return f(&evaluated_args);
+                }
+
+                let def = class_scope
+                    .borrow()
+                    .get_function_definition(name)
+                    .unwrap_or_else(|| panic!("Function '{}' not defined", name));
+
+                let params = def.function_definition_args.as_ref().unwrap_or(empty_vec);
+
+                if evaluated_args.len() != params.len() {
+                    panic!(
+                        "Function {} expected {} arguments, got {}",
+                        name,
+                        params.len(),
+                        evaluated_args.len()
+                    );
+                }
+
+                let func_scope = def.scope.as_ref().expect("Function def missing scope");
+                let new_scope = Rc::new(RefCell::new(Scope::new_with_parent(func_scope.clone())));
+
+                for (param, arg) in params.iter().zip(evaluated_args.iter()) {
+                    let expected = param.variable_type.as_ref().unwrap();
+
+                    if param.variable_type.as_ref() != Some(&arg.data_type) && !(expected == &Data_Type::FLOAT && arg.data_type == Data_Type::INT){
+                        panic!(
+                            "Function {} argument type mismatch: expected {:?}, got {:?}",
+                            name, param.variable_type, arg.data_type
+                        );
+                    }
+
+                    let mut value = arg.clone();
+
+                    value.scope = Some(new_scope.clone()); 
+
+                    let mut var_def = AST::new(Ast_Type::AST_VARIABLE_DEF);
+                    var_def.variable_definition_variable_name = param.variable_definition_variable_name.clone(); 
+                    var_def.variable_definition_value = Some(Box::new(value));
+                    var_def.variable_type = param.variable_type.clone();
+                    var_def.scope = Some(new_scope.clone());
+
+                    new_scope.borrow_mut().add_variable_definition(var_def);
+                }
+
+                let mut body = def.function_definition_body.as_ref().expect("Missing body").clone();
+                self.set_scope_recursively(&mut body, new_scope.clone());
+
+                let result = self.visit(&mut body);
+
+                if result.ast_type == Ast_Type::AST_RETURN {
+                    if let Some(value) = result.return_value {
+                        return *value;
+                    }
+                    else {
+                        return result; 
+                    }
+                }
+
+                AST::new(Ast_Type::AST_NOOP)
+            }
+
+            _ => panic!("Invalid class access on dot_right"),
+        }
+    }
+
+    pub fn visit_dot(&mut self, node: &mut AST) -> AST {
         let left = self.visit(node.dot_left.as_mut().unwrap());
 
         if left.ast_type == Ast_Type::AST_NOOP {
@@ -363,7 +558,7 @@ impl Visitor {
         AST::new(Ast_Type::AST_NOOP)
     }
 
-    fn set_scope_recursively(&self, node: &mut AST, scope: Rc<RefCell<Scope>>) {
+    pub fn set_scope_recursively(&self, node: &mut AST, scope: Rc<RefCell<Scope>>) {
         node.scope = Some(scope.clone());
 
         if let Some(children) = node.compound_value.as_mut() {
@@ -375,7 +570,6 @@ impl Visitor {
         if let Some(left) = node.left.as_mut() {
             self.set_scope_recursively(left, scope.clone());
         }
-
         if let Some(right) = node.right.as_mut() {
             self.set_scope_recursively(right, scope.clone());
         }
@@ -390,73 +584,93 @@ impl Visitor {
             self.set_scope_recursively(body, scope.clone());
         }
 
+        if let Some(args) = node.function_definition_args.as_mut() {
+            for arg in args.iter_mut() {
+                self.set_scope_recursively(arg, scope.clone());
+            }
+        }
+
+        if let Some(ret) = node.return_value.as_mut() {
+            self.set_scope_recursively(ret, scope.clone());
+        }
+
         if let Some(val) = node.variable_definition_value.as_mut() {
             self.set_scope_recursively(val, scope.clone());
         }
 
-        if let Some(r) = node.return_value.as_mut() {
-            self.set_scope_recursively(r, scope.clone());
-        }
-    
-        if let Some(body) = node.for_body.as_mut() {
-            self.set_scope_recursively(body, scope.clone());
+        if let Some(reassign) = node.reassign_value.as_mut() {
+            self.set_scope_recursively(reassign, scope.clone());
         }
 
         if let Some(init) = node.for_init.as_mut() {
             self.set_scope_recursively(init, scope.clone());
         }
-
-        if let Some(increment) = node.for_increment.as_mut() {
-            self.set_scope_recursively(increment, scope.clone());
-        }
-
         if let Some(cond) = node.for_condition.as_mut() {
             self.set_scope_recursively(cond, scope.clone());
         }
-
-        if let Some(r) = node.reassign_value.as_mut()  {
-            self.set_scope_recursively(r, scope.clone());
+        if let Some(incr) = node.for_increment.as_mut() {
+            self.set_scope_recursively(incr, scope.clone());
         }
-    
-        if let Some(v) = node.array_elements.as_mut() {
-            for element in v {
-                self.set_scope_recursively(element, scope.clone());
+        if let Some(body) = node.for_body.as_mut() {
+            self.set_scope_recursively(body, scope.clone());
+        }
+
+        if let Some(cond) = node.if_condition.as_mut() {
+            self.set_scope_recursively(cond, scope.clone());
+        }
+        if let Some(if_body) = node.if_body.as_mut() {
+            self.set_scope_recursively(if_body, scope.clone());
+        }
+        if let Some(else_body) = node.else_body.as_mut() {
+            self.set_scope_recursively(else_body, scope.clone());
+        }
+        if let Some(cond) = node.while_condition.as_mut() {
+            self.set_scope_recursively(cond, scope.clone());
+        }
+        if let Some(body) = node.while_body.as_mut() {
+            self.set_scope_recursively(body, scope.clone());
+        }
+
+        if let Some(elements) = node.array_elements.as_mut() {
+            for elem in elements.iter_mut() {
+                self.set_scope_recursively(elem, scope.clone());
             }
         }
-    
-        if let Some(i) = node.if_body.as_mut() {
-            self.set_scope_recursively(i, scope.clone());
+        if let Some(index) = node.array_index.as_mut() {
+            self.set_scope_recursively(index, scope.clone());
+        }
+        if let Some(value) = node.array_assign_value.as_mut() {
+            self.set_scope_recursively(value, scope.clone());
         }
 
-        if let Some(i) = node.if_condition.as_mut() {
-            self.set_scope_recursively(i, scope.clone());
+        if let Some(left) = node.dot_left.as_mut() {
+            self.set_scope_recursively(left, scope.clone());
+        }
+        if let Some(right) = node.dot_right.as_mut() {
+            self.set_scope_recursively(right, scope.clone());
         }
 
-        if let Some(e) = node.else_body.as_mut() {
-            self.set_scope_recursively(e, scope.clone());
+        if let Some(args) = node.class_args.as_mut() {
+            for arg in args.iter_mut() {
+                self.set_scope_recursively(arg, scope.clone());
+            }
         }
 
-        if let Some(w) = node.while_body.as_mut() {
-            self.set_scope_recursively(w, scope.clone());
+        if let Some(args) = node.class_definition_args.as_mut() {
+            for arg in args.iter_mut() {
+                self.set_scope_recursively(arg, scope.clone());
+            }
         }
 
-        if let Some(w) = node.while_condition.as_mut() {
-            self.set_scope_recursively(w, scope.clone());
-        }
-    
-        if let Some(l) = node.dot_left.as_mut() {
-            self.set_scope_recursively(l, scope.clone());
+        if let Some(body) = node.class_definition_body.as_mut() {
+            self.set_scope_recursively(body, scope.clone());
         }
 
-        if let Some(r) = node.dot_right.as_mut() {
-            self.set_scope_recursively(r, scope.clone());
-        }
-
-        if let Some(i) = node.imported_ast.as_mut() {
-            self.set_scope_recursively(i, scope.clone());
+        if let Some(imported) = node.imported_ast.as_mut() {
+            self.set_scope_recursively(imported, scope.clone());
         }
     }
-   
+
     pub fn visit_binary(&mut self, node: &mut AST) -> AST {
         let op = node.operator.as_ref().expect("Missing operator");
 
@@ -532,6 +746,7 @@ impl Visitor {
             Types::TOKEN_ASTERISK => l_val * r_val,
             Types::TOKEN_FSLASH => l_val / r_val,
             Types::TOKEN_PERCENT => l_val % r_val,
+            Types::TOKEN_CARROT => l_val.powf(r_val), 
             _ => panic!("Unknown operator"),
         };
 
@@ -578,6 +793,7 @@ impl Visitor {
 
     pub fn visit_reassign(&mut self, node: &mut AST) -> AST {
         let name = node.reassign_name.clone();
+
         let new_value = self.visit(&mut *node.reassign_value.clone().as_mut().unwrap());
 
         let mut scope_ref = node.scope.clone().unwrap();

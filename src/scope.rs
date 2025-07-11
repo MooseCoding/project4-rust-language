@@ -9,6 +9,7 @@ pub type SharedScope = Rc<RefCell<Scope>>;
 pub struct Scope {
     pub function_definitions: Vec<AST>,
     pub variable_definitions: Vec<AST>,
+    pub class_definitions: Vec<AST>,
     pub imports: Vec<AST>, 
     pub parent: Option<SharedScope>
 }
@@ -33,6 +34,7 @@ impl Scope {
         Scope {
             function_definitions: Vec::new(),
             variable_definitions: Vec::new(),
+            class_definitions: Vec::new(), 
             imports: Vec::new(), 
             parent: None::<SharedScope>,
         }
@@ -42,6 +44,7 @@ impl Scope {
         Scope {
             function_definitions: Vec::new(),
             variable_definitions: Vec::new(),
+            class_definitions: Vec::new(), 
             imports: Vec::new(), 
             parent: Some(parent),
         }
@@ -185,5 +188,37 @@ impl Scope {
             let name = var.variable_definition_variable_name.as_ref().unwrap();
             println!("Var {}", name); 
         }
+        for class in &self.class_definitions {
+            let c_name = class.class_definition_name.as_ref().unwrap();
+            println!("Class {}", c_name); 
+        }
+    }
+
+    pub fn add_class_definition(&mut self, class: AST) {
+        self.class_definitions.push(class);
+    }
+
+    pub fn get_class_definition(&self, name: &str) -> Option<AST> {
+        for class in &self.class_definitions {
+            if class.class_definition_name.as_ref() == Some(&name.to_string()) {
+                return Some(class.clone())
+            }
+        }
+        if let Some(parent) = &self.parent {
+            return parent.borrow().get_class_definition(name);
+        }
+
+        None
+    }
+
+    pub fn update_class_definition(&mut self, def: AST) {
+        for class in &mut self.class_definitions {
+            if class.class_definition_name.as_ref().unwrap() == def.class_definition_name.as_ref().unwrap() {
+                *class = def.clone(); 
+                return;
+            }
+        }
+
+        self.class_definitions.push(def); 
     }
 }

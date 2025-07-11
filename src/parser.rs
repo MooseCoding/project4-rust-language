@@ -26,6 +26,7 @@ impl<'a> Parser<'a> {
     }
 
     pub fn eat(&mut self, t: Types) {
+        // println!("Ate {:#?} with value {}", t, self.current_token.value); 
         if self.current_token.kind == t {
             self.prev_token = Some(self.current_token.clone());
             self.current_token = self.lexer.next_token();
@@ -71,17 +72,413 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_id(&mut self) -> AST {
+        if self.scope.clone().borrow().get_class_definition(self.current_token.value.clone().as_str()).is_some() {
+            return self.parse_variable_definition(); 
+        }
         match self.current_token.value.as_str() {
             "int" | "str" | "bool" | "float" => self.parse_variable_definition(),
             "fun" => self.parse_function_definition(),
+            "class" => self.parse_class_definition(), 
             "return" => self.parse_return(),
             "if" => self.parse_if(),
             "while" => self.parse_while(), 
             "for" => self.parse_for(), 
             "import" => self.parse_import(), 
             "break" => self.parse_break(), 
-            _ => self.parse_variable(),
+            _ => {
+                return self.parse_variable();
+            },
         }
+    }
+
+    pub fn parse_variable(&mut self) -> AST {
+        let n = self.current_token.value.clone();
+
+        self.eat(Types::TOKEN_ID);
+
+        let mut ast = AST::new(Ast_Type::AST_VARIABLE);
+        ast.variable_name = Some(n.clone());
+        ast.scope = Some(self.scope.clone());
+
+        while self.current_token.kind == Types::TOKEN_DOT {
+            self.eat(Types::TOKEN_DOT);
+
+            let field = self.current_token.value.clone();
+            self.eat(Types::TOKEN_ID);
+
+            let mut node = AST::new(Ast_Type::AST_DOT); 
+
+            if let Some(var) = self.scope.clone().borrow().get_variable_definition(&n.clone()) {
+                if var.class_name.is_some() {
+                    node.ast_type = Ast_Type::AST_CLASS_ACCESS;
+                    ast.variable_name = Some(n.clone());
+                    ast.class_name = var.class_name.clone(); 
+                }
+            }
+
+            node.dot_left = Some(Box::new(ast));
+            node.scope = Some(self.scope.clone()); 
+
+            if self.current_token.kind == Types::TOKEN_LPARENT {
+                node.dot_right = Some(Box::new(self.parse_function_call()));
+                node.scope = Some(self.scope.clone()); 
+            }
+            else if self.current_token.kind == Types::TOKEN_EQUALS {
+                let mut right = AST::new(Ast_Type::AST_VARIABLE); 
+
+                right.variable_name = Some(field); 
+
+                right.scope = Some(self.scope.clone());
+                node.dot_right = Some(Box::new(right));
+
+                return self.parse_class_access(node);  
+            }
+            else {
+                let mut right = AST::new(Ast_Type::AST_VARIABLE);
+
+                right.variable_name = Some(field); 
+                right.scope = Some(self.scope.clone());
+                node.dot_right = Some(Box::new(right));
+            }
+
+
+            ast = node; 
+        }
+
+        if self.current_token.kind == Types::TOKEN_LPARENT {
+            return self.parse_function_call();
+        }
+        else if self.current_token.kind == Types::TOKEN_EQUALS {
+            return self.parse_reassignment(n); 
+        }
+        else if self.current_token.kind == Types::TOKEN_INCREMENT {
+            self.eat(Types::TOKEN_INCREMENT);
+            let mut increment = AST::new(Ast_Type::AST_INCREMENT);
+            increment.reassign_name = Some(n.clone());
+            increment.scope = Some(self.scope.clone());
+            
+            return increment
+        }
+        else if self.current_token.kind == Types::TOKEN_DECREMENT {
+            self.eat(Types::TOKEN_DECREMENT);
+            let mut decrement = AST::new(Ast_Type::AST_DECREMENT);
+            decrement.reassign_name = Some(n.clone());
+            decrement.scope = Some(self.scope.clone());
+            
+            return decrement
+        }
+        else if self.current_token.kind == Types::TOKEN_LBOX {
+            self.eat(Types::TOKEN_LBOX);
+            let index = self.parse_expr();
+            self.eat(Types::TOKEN_RBOX);
+
+            if self.current_token.kind == Types::TOKEN_EQUALS {
+                return self.parse_array_assignment(n.clone(), index.clone());
+            }
+
+            let mut node = AST::new(Ast_Type::AST_ARRAY_ACCESS);
+            node.array_name = Some(n.clone());
+            node.array_index = Some(Box::new(index));
+            node.data_type = self.scope.clone().borrow().get_variable_definition(&n.clone()).unwrap().data_type; 
+            node.scope = Some(self.scope.clone()); 
+            return node; 
+        }
+
+        ast
+    }
+
+    pub fn parse_array_definition(&mut self, declared_type: Data_Type) -> AST {
+        self.eat(Types::TOKEN_LBOX);
+        self.eat(Types::TOKEN_RBOX);
+
+        let name = self.current_token.value.clone(); // Name
+
+        self.eat(Types::TOKEN_ID);
+
+        self.eat(Types::TOKEN_EQUALS);
+
+
+        let mut elements = vec![];
+
+        self.eat(Types::TOKEN_LBOX);
+
+        if self.current_token.kind != Types::TOKEN_RBOX {
+            loop {
+                let mut element = self.parse_expr();
+
+                if element.data_type == Data_Type::INT && declared_type == Data_Type::FLOAT {
+                    element.data_type = Data_Type::FLOAT;
+                    element.float_value = Some(element.int_value.unwrap() as f64);
+                    element.int_value = None;
+                    element.int_init = None;
+                    element.float_init = Some(true);
+                    element.past_decimal = Some(0); 
+                    element.ast_type = Ast_Type::AST_FLOAT;
+                }
+
+                if element.data_type != declared_type  {
+                    panic!("Element's data type is not the declared type")
+                }
+
+                elements.push(element);
+
+                if self.current_token.kind == Types::TOKEN_COMMA {
+                    self.eat(Types::TOKEN_COMMA);
+                }
+                else {
+                    break; 
+                }
+            }
+        }
+
+        self.eat(Types::TOKEN_RBOX);
+
+        let mut node = AST::new(Ast_Type::AST_ARRAY_DEF);
+        node.array_elements = Some(elements);
+        node.array_name = Some(name.clone()); 
+        node.data_type = declared_type; 
+        node.scope = Some(self.scope.clone()); 
+
+        self.scope.borrow_mut().add_variable_definition(node.clone()); 
+
+        node 
+    }   
+
+    pub fn parse_array_assignment(&mut self, name: String, index: AST) -> AST {
+        self.eat(Types::TOKEN_EQUALS);
+        let value = self.parse_expr();
+
+        let mut node = AST::new(Ast_Type::AST_ARRAY_ACCESS);
+        node.array_index = Some(Box::new(index.clone()));
+        node.array_name = Some(name.clone());
+        node.array_assign_value = Some(Box::new(value.clone()));
+        node.scope = Some(self.scope.clone()); 
+        node 
+    }
+
+    pub fn parse_variable_definition(&mut self) -> AST {
+        self.eat(Types::TOKEN_ID); 
+
+        let type_name = self.prev_token.as_ref().unwrap().clone().value; 
+
+        let t: Data_Type = match type_name.as_str() {
+            "str" => Data_Type::STR,
+            "int"  => Data_Type::INT,
+            "bool"  => Data_Type::BOOL,
+            "float" => Data_Type::FLOAT,
+            _ => Data_Type::CUSTOM(self.current_token.value.clone()), // Custom class def 
+        };
+
+        // Array Definition
+        if self.current_token.kind == Types::TOKEN_LBOX {
+            return self.parse_array_definition(t.clone());
+        }
+
+        let n = self.current_token.value.clone();
+        self.eat(Types::TOKEN_ID);
+
+        if self.current_token.kind != Types::TOKEN_EQUALS {
+            let mut def = AST::new(Ast_Type::AST_VARIABLE_DEF);
+            def.variable_type = Some(t);
+            def.variable_definition_variable_name = Some(n.clone());
+            def.scope = Some(self.scope.clone());
+            
+            return def; 
+        }
+
+        self.eat(Types::TOKEN_EQUALS);
+
+        if matches!(t, Data_Type::CUSTOM(_)) {
+            return self.parse_class_instance(n.clone(), t, type_name.to_string());
+        }
+
+        let val = self.parse_term();
+        let evaluated = self.eval_ast(val.clone());
+
+        let inferred_type = if evaluated.float_init.unwrap_or(false) {
+            Data_Type::FLOAT
+        } else if evaluated.string_value.is_some() {
+            Data_Type::STR
+        } else if evaluated.int_init.unwrap_or(false) {
+            Data_Type::INT
+        } else if evaluated.bool_init.unwrap_or(false) {
+            Data_Type::BOOL
+        } else {
+            t.clone()
+        };
+
+        let mut val = val;
+        val.data_type = inferred_type.clone();
+
+        let mut def = AST::new(Ast_Type::AST_VARIABLE_DEF);
+        def.variable_definition_variable_name = Some(n.clone());
+        def.variable_definition_value = Some(Box::new(val.clone()));
+        def.scope = Some(self.scope.clone());
+        def.variable_type = Some(inferred_type.clone());
+
+        if def.variable_type != Some(t.clone()) {
+            panic!(
+                "Variable {:?} is not the type {:?} that you assigned it, instead it's {:?}",
+                def.variable_definition_variable_name.clone().unwrap(),
+                t,
+                def.variable_type.unwrap()
+            );
+        }
+
+        //self.scope.borrow_mut().add_variable_definition(def.clone());
+        def
+    }
+
+    pub fn parse_class_access(&mut self, node: AST) -> AST {
+        if self.current_token.kind == Types::TOKEN_EQUALS {
+            self.eat(Types::TOKEN_EQUALS);
+            let val = self.parse_expr();
+
+            let mut ast = AST::new(Ast_Type::AST_CLASS_ACCESS);
+            ast.dot_left = node.dot_left.clone();
+            ast.dot_right = node.dot_right.clone(); 
+
+            ast.reassign_value = Some(Box::new(val.clone()));
+            ast.scope = Some(self.scope.clone());
+
+            return ast;
+        }
+
+        let mut ast = AST::new(Ast_Type::AST_CLASS_ACCESS);
+        ast.dot_left = node.dot_left.clone();
+        ast.dot_right = node.dot_right.clone();
+        ast.scope = Some(self.scope.clone());
+
+        ast
+    }
+
+    pub fn parse_class_instance(&mut self, n: String, t: Data_Type, type_name:String) -> AST {
+        if self.current_token.value != "new".to_string() {
+            panic!("New keyword must be used when instanciating a class");
+        }   
+    
+        // now onto Human(...args)
+        self.eat(Types::TOKEN_ID);
+
+        if self.current_token.value != type_name {
+            panic!("Type's do not match for class instantion {}", n.clone()); 
+        } 
+
+        self.eat(Types::TOKEN_ID); // eat the name
+        self.eat(Types::TOKEN_LPARENT); 
+
+        let mut args = Vec::new(); 
+
+        if self.current_token.kind != Types::TOKEN_RPARENT {
+            args.push(self.parse_term());
+
+            while self.current_token.kind == Types::TOKEN_COMMA {
+                self.eat(Types::TOKEN_COMMA);
+                args.push(self.parse_term());
+            }
+        }
+
+        self.eat(Types::TOKEN_RPARENT); 
+
+        let mut class_instance = AST::new(Ast_Type::AST_CLASS_INSTANCE);
+        class_instance.class_name = Some(type_name);
+        class_instance.variable_definition_variable_name = Some(n.clone()); 
+        class_instance.class_args = Some(args.clone()); 
+
+        class_instance.scope = Some(self.scope.clone()); 
+
+        self.scope.borrow_mut().add_variable_definition(class_instance.clone());
+
+        class_instance 
+    }
+
+    pub fn parse_class_definition(&mut self) -> AST {
+        let mut ast = AST::new(Ast_Type::AST_CLASS_DEF); 
+
+        self.eat(Types::TOKEN_ID); 
+        let n = self.current_token.value.clone();
+        self.eat(Types::TOKEN_ID);
+
+        self.eat(Types::TOKEN_LPARENT);
+
+        let mut args:Vec<AST> = vec![]; 
+
+        let class_scope = Rc::new(RefCell::new(crate::scope::Scope::new_with_parent(self.scope.clone())));
+
+        while self.current_token.kind != Types::TOKEN_RPARENT {
+            let t = match self.current_token.value.as_str() {
+                "str" => Data_Type::STR,
+                "int" => Data_Type::INT,
+                "float" => Data_Type::FLOAT,
+                "bool" => Data_Type::BOOL,
+                _ => panic!("Incorrect type for class {}", n),  
+            };
+
+            self.eat(Types::TOKEN_ID);
+
+            let n2 = self.current_token.value.clone();
+            
+            self.eat(Types::TOKEN_ID);
+
+
+            let mut arg = AST::new(Ast_Type::AST_VARIABLE_DEF);
+            arg.variable_definition_variable_name = Some(n2);
+            arg.variable_type = Some(t);
+            arg.scope = Some(class_scope.clone()); 
+
+            class_scope.borrow_mut().add_variable_definition(arg.clone());
+            
+            args.push(arg);
+
+            if self.current_token.kind == Types::TOKEN_COMMA {
+                self.eat(Types::TOKEN_COMMA);
+            } else {
+                break;
+            }
+        }
+
+        self.eat(Types::TOKEN_RPARENT);
+        self.eat(Types::TOKEN_LBRACK);
+
+        let mut temp_parser = Parser {
+            lexer: self.lexer,
+            current_token: self.current_token.clone(),
+            prev_token: self.prev_token.clone(),
+            scope: class_scope.clone(), 
+        }; 
+
+        let mut body = temp_parser.parse_function_body(); 
+
+        set_scope_recursively(&mut body, class_scope.clone());
+
+
+        ast.class_definition_body = Some(Box::new(body.clone())); 
+
+        self.current_token = temp_parser.current_token;
+        self.prev_token = temp_parser.prev_token;
+
+        self.eat(Types::TOKEN_RBRACK);
+
+        ast.class_definition_args = Some(args);
+        ast.class_definition_name = Some(n.clone()); 
+
+        // Temp fix to add var and func defs but ill fix later 
+
+        if let Some(stmts) = &body.compound_value {
+            for s in stmts {
+                if s.ast_type == Ast_Type::AST_VARIABLE_DEF {
+                    class_scope.borrow_mut().add_variable_definition(s.clone());
+                }
+                else if s.ast_type == Ast_Type::AST_FUNCTION_DEF {
+                    class_scope.borrow_mut().add_function_definition(s.clone());
+                }
+            }
+        }
+
+        ast.scope = Some(class_scope.clone());
+        self.scope.borrow_mut().add_class_definition(ast.clone());
+
+        ast
     }
 
     pub fn parse_break(&mut self) -> AST {        
@@ -205,14 +602,28 @@ impl<'a> Parser<'a> {
         left
     }
 
-    pub fn parse_multiplication(&mut self) -> AST {
+    pub fn parse_exponentiation(&mut self) -> AST {
         let mut left = self.parse_factor();
+
+        while matches!(self.current_token.kind, Types::TOKEN_CARROT) {
+            let op = self.current_token.kind.clone();
+            self.eat(op.clone());
+            let right = self.parse_exponentiation();
+
+            left = self.combine_ast(left, op, right);
+        }
+
+        left
+    }
+
+    pub fn parse_multiplication(&mut self) -> AST {
+        let mut left = self.parse_exponentiation();
 
         while matches!(self.current_token.kind, Types::TOKEN_ASTERISK | Types::TOKEN_FSLASH | Types::TOKEN_PERCENT) {
             let op = self.current_token.kind.clone();
             self.eat(op.clone());
 
-            let right = self.parse_factor();
+            let right = self.parse_exponentiation();
 
             left = self.combine_ast(left, op, right);
         }
@@ -293,13 +704,6 @@ impl<'a> Parser<'a> {
                 node.scope = Some(self.scope.clone());
                 node
             }
-            Types::TOKEN_COMMENT_START => {
-                while self.current_token.kind.clone() != Types::TOKEN_COMMENT_END {
-                    self.eat(self.current_token.kind.clone()); 
-                }
-
-                return AST::new(Ast_Type::AST_NOOP); 
-            }
             _ => panic!("Unexpected token in factor {:?}", self.current_token.clone()),
         }
     }
@@ -333,207 +737,6 @@ impl<'a> Parser<'a> {
             }
             _ => ast,
         }
-    }
-
-    pub fn parse_variable(&mut self) -> AST {
-        let n = self.current_token.value.clone();
-
-        self.eat(Types::TOKEN_ID);
-
-        let mut ast = AST::new(Ast_Type::AST_VARIABLE);
-        ast.variable_name = Some(n.clone());
-        ast.scope = Some(self.scope.clone());
-
-        while self.current_token.kind == Types::TOKEN_DOT {
-            self.eat(Types::TOKEN_DOT);
-
-            let field = self.current_token.value.clone();
-            self.eat(Types::TOKEN_ID);
-
-            let mut node = AST::new(Ast_Type::AST_DOT); 
-            node.dot_left = Some(Box::new(ast));
-
-            if self.current_token.kind == Types::TOKEN_LPARENT {
-                node.dot_right = Some(Box::new(self.parse_function_call()));
-                node.scope = Some(self.scope.clone()); 
-            }
-            else {
-                let mut right = AST::new(Ast_Type::AST_VARIABLE);
-
-                right.variable_name = Some(field); 
-                right.scope = Some(self.scope.clone());
-                node.dot_right = Some(Box::new(right));
-            }
-
-            ast = node; 
-        }
-
-        if self.current_token.kind == Types::TOKEN_LPARENT {
-            return self.parse_function_call();
-        }
-        else if self.current_token.kind == Types::TOKEN_EQUALS {
-            return self.parse_reassignment(n); 
-        }
-        else if self.current_token.kind == Types::TOKEN_INCREMENT {
-            self.eat(Types::TOKEN_INCREMENT);
-            let mut increment = AST::new(Ast_Type::AST_INCREMENT);
-            increment.reassign_name = Some(n.clone());
-            increment.scope = Some(self.scope.clone());
-            
-            return increment
-        }
-        else if self.current_token.kind == Types::TOKEN_DECREMENT {
-            self.eat(Types::TOKEN_DECREMENT);
-            let mut decrement = AST::new(Ast_Type::AST_DECREMENT);
-            decrement.reassign_name = Some(n.clone());
-            decrement.scope = Some(self.scope.clone());
-            
-            return decrement
-        }
-        else if self.current_token.kind == Types::TOKEN_LBOX {
-            self.eat(Types::TOKEN_LBOX);
-            let index = self.parse_expr();
-            self.eat(Types::TOKEN_RBOX);
-
-            if self.current_token.kind == Types::TOKEN_EQUALS {
-                return self.parse_array_assignment(n.clone(), index.clone());
-            }
-
-            let mut node = AST::new(Ast_Type::AST_ARRAY_ACCESS);
-            node.array_name = Some(n.clone());
-            node.array_index = Some(Box::new(index));
-            node.data_type = self.scope.clone().borrow().get_variable_definition(&n.clone()).unwrap().data_type; 
-            node.scope = Some(self.scope.clone()); 
-            return node; 
-        }
-
-        ast
-    }
-
-    pub fn parse_array_definition(&mut self, declared_type: Data_Type) -> AST {
-        self.eat(Types::TOKEN_LBOX);
-        self.eat(Types::TOKEN_RBOX);
-
-        let name = self.current_token.value.clone(); // Name
-
-        self.eat(Types::TOKEN_ID);
-
-        self.eat(Types::TOKEN_EQUALS);
-
-
-        let mut elements = vec![];
-
-        self.eat(Types::TOKEN_LBOX);
-
-        if self.current_token.kind != Types::TOKEN_RBOX {
-            loop {
-                let mut element = self.parse_expr();
-
-                if element.data_type == Data_Type::INT && declared_type == Data_Type::FLOAT {
-                    element.data_type = Data_Type::FLOAT;
-                    element.float_value = Some(element.int_value.unwrap() as f64);
-                    element.int_value = None;
-                    element.int_init = None;
-                    element.float_init = Some(true);
-                    element.past_decimal = Some(0); 
-                    element.ast_type = Ast_Type::AST_FLOAT;
-                }
-
-                if element.data_type != declared_type  {
-                    panic!("Element's data type is not the declared type")
-                }
-
-                elements.push(element);
-
-                if self.current_token.kind == Types::TOKEN_COMMA {
-                    self.eat(Types::TOKEN_COMMA);
-                }
-                else {
-                    break; 
-                }
-            }
-        }
-
-        self.eat(Types::TOKEN_RBOX);
-
-        let mut node = AST::new(Ast_Type::AST_ARRAY_DEF);
-        node.array_elements = Some(elements);
-        node.array_name = Some(name.clone()); 
-        node.data_type = declared_type; 
-        node.scope = Some(self.scope.clone()); 
-
-        self.scope.borrow_mut().add_variable_definition(node.clone()); 
-
-        node 
-    }   
-
-    pub fn parse_array_assignment(&mut self, name: String, index: AST) -> AST {
-        self.eat(Types::TOKEN_EQUALS);
-        let value = self.parse_expr();
-
-        let mut node = AST::new(Ast_Type::AST_ARRAY_ACCESS);
-        node.array_index = Some(Box::new(index.clone()));
-        node.array_name = Some(name.clone());
-        node.array_assign_value = Some(Box::new(value.clone()));
-        node.scope = Some(self.scope.clone()); 
-        node 
-    }
-
-    pub fn parse_variable_definition(&mut self) -> AST {
-        let t = match self.current_token.value.as_str() {
-            "str" => Data_Type::STR,
-            "int" => Data_Type::INT,
-            "bool" => Data_Type::BOOL,
-            _ => Data_Type::FLOAT,
-        };
-
-        self.eat(Types::TOKEN_ID);
-
-
-        // Array Definition
-        if self.current_token.kind == Types::TOKEN_LBOX {
-            return self.parse_array_definition(t.clone());
-        }
-
-        let n = self.current_token.value.clone();
-        self.eat(Types::TOKEN_ID);
-        self.eat(Types::TOKEN_EQUALS);
-
-        let val = self.parse_term();
-        let evaluated = self.eval_ast(val.clone());
-
-        let inferred_type = if evaluated.float_init.unwrap_or(false) {
-            Data_Type::FLOAT
-        } else if evaluated.string_value.is_some() {
-            Data_Type::STR
-        } else if evaluated.int_init.unwrap_or(false) {
-            Data_Type::INT
-        } else if evaluated.bool_init.unwrap_or(false) {
-            Data_Type::BOOL
-        } else {
-            t.clone()
-        };
-
-        let mut val = val;
-        val.data_type = inferred_type.clone();
-
-        let mut def = AST::new(Ast_Type::AST_VARIABLE_DEF);
-        def.variable_definition_variable_name = Some(n.clone());
-        def.variable_definition_value = Some(Box::new(val.clone()));
-        def.scope = Some(self.scope.clone());
-        def.variable_type = Some(inferred_type.clone());
-
-        if def.variable_type != Some(t.clone()) {
-            panic!(
-                "Variable {:?} is not the type {:?} that you assigned it, instead it's {:?}",
-                def.variable_definition_variable_name.clone().unwrap(),
-                t,
-                def.variable_type.unwrap()
-            );
-        }
-
-        //self.scope.borrow_mut().add_variable_definition(def.clone());
-        def
     }
 
     pub fn parse_function_call(&mut self) -> AST {
@@ -578,7 +781,14 @@ impl<'a> Parser<'a> {
                 "int" => Data_Type::INT,
                 "float" => Data_Type::FLOAT,
                 "bool" => Data_Type::BOOL,
-                _ => panic!("Incorrect type for function {}", n),
+                _ =>{
+                    if func_scope.clone().borrow().get_class_definition(&self.current_token.value).is_some() {
+                        Data_Type::CUSTOM(self.current_token.value.to_string()) 
+                    }
+                    else {
+                        panic!("Incorrect type for function {}", n)
+                    }
+                } ,
             };
 
             self.eat(Types::TOKEN_ID);
@@ -760,64 +970,12 @@ impl<'a> Parser<'a> {
         ast.for_body = Some(Box::new(body));
         ast.scope = Some(loop_scope.clone());
 
-        self.set_scope_recursively(ast.for_init.as_mut().unwrap(), loop_scope.clone());
-        self.set_scope_recursively(ast.for_condition.as_mut().unwrap(), loop_scope.clone());
-        self.set_scope_recursively(ast.for_increment.as_mut().unwrap(), loop_scope.clone());
-        self.set_scope_recursively(ast.for_body.as_mut().unwrap(), loop_scope.clone());
+        set_scope_recursively(ast.for_init.as_mut().unwrap(), loop_scope.clone());
+        set_scope_recursively(ast.for_condition.as_mut().unwrap(), loop_scope.clone());
+        set_scope_recursively(ast.for_increment.as_mut().unwrap(), loop_scope.clone());
+        set_scope_recursively(ast.for_body.as_mut().unwrap(), loop_scope.clone());
 
         ast
-    }
-
-    fn set_scope_recursively(&self, node: &mut AST, scope: Rc<RefCell<Scope>>) {
-        node.scope = Some(scope.clone());
-
-        if let Some(children) = node.compound_value.as_mut() {
-            for child in children.iter_mut() {
-                self.set_scope_recursively(child, scope.clone());
-            }
-        }
-
-        if let Some(left) = node.left.as_mut() {
-            self.set_scope_recursively(left, scope.clone());
-        }
-
-        if let Some(right) = node.right.as_mut() {
-            self.set_scope_recursively(right, scope.clone());
-        }
-
-        if let Some(args) = node.function_call_args.as_mut() {
-            for arg in args.iter_mut() {
-                self.set_scope_recursively(arg, scope.clone());
-            }
-        }
-
-        if let Some(body) = node.function_definition_body.as_mut() {
-            self.set_scope_recursively(body, scope.clone());
-        }
-
-        if let Some(val) = node.variable_definition_value.as_mut() {
-            self.set_scope_recursively(val, scope.clone());
-        }
-
-        if let Some(r) = node.return_value.as_mut() {
-            self.set_scope_recursively(r, scope.clone());
-        }
-    
-        if let Some(body) = node.for_body.as_mut() {
-            self.set_scope_recursively(body, scope.clone());
-        }
-
-        if let Some(init) = node.for_init.as_mut() {
-            self.set_scope_recursively(init, scope.clone());
-        }
-
-        if let Some(increment) = node.for_increment.as_mut() {
-            self.set_scope_recursively(increment, scope.clone());
-        }
-
-        if let Some(cond) = node.for_condition.as_mut() {
-            self.set_scope_recursively(cond, scope.clone());
-        }
     }
 
     pub fn parse_or(&mut self) -> AST {
@@ -857,5 +1015,57 @@ impl<'a> Parser<'a> {
         }
 
         left
+    }
+}
+
+fn set_scope_recursively(node: &mut AST, scope: Rc<RefCell<Scope>>) {
+    node.scope = Some(scope.clone());
+
+    if let Some(children) = node.compound_value.as_mut() {
+        for child in children.iter_mut() {
+            set_scope_recursively(child, scope.clone());
+        }
+    }
+
+    if let Some(left) = node.left.as_mut() {
+        set_scope_recursively(left, scope.clone());
+    }
+
+    if let Some(right) = node.right.as_mut() {
+        set_scope_recursively(right, scope.clone());
+    }
+
+    if let Some(args) = node.function_call_args.as_mut() {
+        for arg in args.iter_mut() {
+            set_scope_recursively(arg, scope.clone());
+        }
+    }
+
+    if let Some(body) = node.function_definition_body.as_mut() {
+        set_scope_recursively(body, scope.clone());
+    }
+
+    if let Some(val) = node.variable_definition_value.as_mut() {
+        set_scope_recursively(val, scope.clone());
+    }
+
+    if let Some(r) = node.return_value.as_mut() {
+        set_scope_recursively(r, scope.clone());
+    }
+
+    if let Some(body) = node.for_body.as_mut() {
+        set_scope_recursively(body, scope.clone());
+    }
+
+    if let Some(init) = node.for_init.as_mut() {
+        set_scope_recursively(init, scope.clone());
+    }
+
+    if let Some(increment) = node.for_increment.as_mut() {
+        set_scope_recursively(increment, scope.clone());
+    }
+
+    if let Some(cond) = node.for_condition.as_mut() {
+        set_scope_recursively(cond, scope.clone());
     }
 }
