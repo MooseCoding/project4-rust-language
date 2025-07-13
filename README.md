@@ -34,6 +34,6 @@ Make sure that you have rust and cargo installed, download or clone the project 
 
 On a unix system to run as an interpreter run 
 ```rust 
-cargo run -- examples/{file}.iron 
+cargo run -- ./{file}.iron 
 ```
 
