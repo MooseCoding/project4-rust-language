@@ -23,9 +23,20 @@ class Shop(int apple_count, int apple_cost) {
     }
 }
 
+println("This test creates a shop class with a constructor, then does operations on those values");
+
 Shop apple_store = new Shop(10, 2);
 
+println();
+
+println("These are the intial values of the shop");
+
+apple_store.print_stats();
+
 bool status = apple_store.buy_apple(15); 
+
+println("Now we ask it to complete an order buying 15 apples at $2 an apple");
+
 println("Was order completed: ", status); 
 
 apple_store.print_stats();  
