@@ -44,7 +44,7 @@ a library file with the usage of a .steel file
 Like
 
 ```
-examples/lib/{library}.steel
+./lib/{library}.steel
 ```
 
 The standard library of math (and more tbd) can be included 
