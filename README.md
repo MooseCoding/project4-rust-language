@@ -13,7 +13,7 @@ We're gonna do a programming language written in Rust. I've done this priorly in
 - [x] Libraries 
 - [x] Arrays
 - [x] Breaking
-- [ ] Comments (idk how i broke it)
+- [x] Comments
 - [x] Example code for every feature 
 - [x] Classes
 - [ ] Nodes for servers/client interaction 
