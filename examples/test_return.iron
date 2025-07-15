@@ -1,0 +1,7 @@
+fun p(int x) {
+    return x; 
+}
+
+int y = p(3);
+
+println(y); 

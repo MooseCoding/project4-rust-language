@@ -24,7 +24,7 @@ We're gonna do a programming language written in Rust. I've done this priorly in
 - [ ] Debug Tools
 - [ ] Documentation 
 - [x] Constructors
-- [ ] Returning classes 
+- [x] Returning classes 
 
 The final goal, once all prior features are done is to add a compiler
 

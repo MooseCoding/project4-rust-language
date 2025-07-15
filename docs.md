@@ -16,6 +16,67 @@ Functions can be used in the following manner
 function_name(arg1, ...args);
 ```
 
+# Variables
+
+Variables are defined like so 
+
+```
+type variable_name = value;
+```
+
+And accessed like 
+
+```
+variable_name /* will be subbed for a value at runtime */
+```
+
+# If Statements
+
+If statements are defined like so 
+
+```
+if (condition) {
+    /* if body */ 
+}
+else {
+    /* optional else body */ 
+}
+```
+
+Conditions must evaluate to boolean expressions then the if body will run, else the optional else body will run. Note that there are no if else statements, you can embed if statements in other if statements or just simply not use them.
+
+# While Loops 
+
+While loops are defined like so 
+
+```
+while (condition) {
+    /* while body */ 
+}
+```
+
+Conditions must evaluate to boolean expressions, and while the condition is true, all of the code inside the body will be executed.
+
+# For loops 
+
+For loops are defined like so 
+
+```
+for (assignment; condition; increment) {
+    /* for body */ 
+}
+```
+
+Assignments must be a variable definition statement, conditions must be boolean expressions, and the increment will be run at the end of each loop. 
+
+# Arrays 
+
+Arrays are defined like so 
+
+```
+type[] array_name = [...values]; 
+```
+
 # Classes
 
 Classes are defined like so
