@@ -1,3 +1,28 @@
+# Comments
+
+Comments are defined like so 
+
+```
+/* comment body */
+```
+
+Note that there is no difference between a single line comment and a multi-line comment 
+
+# Variables
+
+Variables are defined like so 
+
+```
+type variable_name = value;
+```
+
+And accessed like 
+
+```
+variable_name /* will be subbed for a value at runtime */
+```
+
+
 #  Functions
 
 Functions are defined like so
@@ -16,18 +41,18 @@ Functions can be used in the following manner
 function_name(arg1, ...args);
 ```
 
-# Variables
+# Arrays 
 
-Variables are defined like so 
-
-```
-type variable_name = value;
-```
-
-And accessed like 
+Arrays are defined like so 
 
 ```
-variable_name /* will be subbed for a value at runtime */
+type[] array_name = [...values]; 
+```
+
+And accessed like this 
+
+```
+array_name[index] /* will be subbed for the value at runtime */
 ```
 
 # If Statements
@@ -68,14 +93,6 @@ for (assignment; condition; increment) {
 ```
 
 Assignments must be a variable definition statement, conditions must be boolean expressions, and the increment will be run at the end of each loop. 
-
-# Arrays 
-
-Arrays are defined like so 
-
-```
-type[] array_name = [...values]; 
-```
 
 # Classes
 
