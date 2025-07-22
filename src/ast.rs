@@ -107,6 +107,7 @@ pub struct AST {
 
     pub array_elements: Option<Vec<AST>>,
     pub array_name: Option<String>,
+    pub array_len: Option<usize>,  
     pub array_index: Option<Box<AST>>,
     pub array_assign_value: Option<Box<AST>>,
 
@@ -184,6 +185,7 @@ impl AST {
             for_body:None,
 
             array_elements:None,
+            array_len:None, 
             array_assign_value:None,
             array_index:None,
             array_name:None, 
@@ -223,7 +225,7 @@ impl AST {
             Ast_Type::AST_FLOAT => print!("{:.precision$}", self.float_value.unwrap(), precision = self.past_decimal.unwrap_or(2) as usize),
             Ast_Type::AST_BOOL => print!("{}", if self.bool_value.unwrap() { "true" } else { "false" }),
             Ast_Type::AST_VARIABLE_DEF => {
-                for ast in self.variable_definition_value.as_ref() {
+                while let Some(ast) = self.variable_definition_value.as_ref() {
                     ast.print();
                 }
             } 
@@ -236,6 +238,7 @@ impl AST {
             }
             Ast_Type::AST_ARRAY_DEF => {
                 print!("[");
+
                 if let Some(elements) = &self.array_elements {
                     for (i, element) in elements.iter().enumerate() {
                         element.print();

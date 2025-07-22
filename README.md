@@ -25,6 +25,11 @@ We're gonna do a programming language written in Rust. I've done this priorly in
 - [ ] Documentation 
 - [x] Constructors
 - [x] Returning classes 
+- [ ] Library classes
+- [ ] String/Array dot commands 
+- [ ] Pointers
+- [ ] Compiler 
+- [ ] Speed up interpreter
 
 The final goal, once all prior features are done is to add a compiler
 
@@ -33,7 +38,6 @@ The final goal, once all prior features are done is to add a compiler
 Make sure that you have rust and cargo installed, download or clone the project into a folder:
 
 On a unix system to run as an interpreter run 
-```rust 
+```bash 
 cargo run -- ./{file}.iron 
 ```
-
