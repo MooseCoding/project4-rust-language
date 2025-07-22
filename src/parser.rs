@@ -92,12 +92,11 @@ impl<'a> Parser<'a> {
         }
     }
 
-    pub fn parse_class_return(&mut self) -> AST {
-        self.eat(Types::TOKEN_ID); // eat "new"
-        
-        let class_name = self.current_token.value.clone();
-        
-        self.eat(Types::TOKEN_ID);
+    pub fn parse_class_return(&mut self, ) -> AST {      
+        self.eat(Types::TOKEN_ID); // eat "new"   
+        let class_name = self.current_token.value.clone(); 
+
+        self.eat(Types::TOKEN_ID); // eat the class name 
         self.eat(Types::TOKEN_LPARENT);
 
         let mut args = Vec::new();
@@ -139,54 +138,6 @@ impl<'a> Parser<'a> {
         self.scope.borrow_mut().add_variable_definition(term.clone());
 
         term 
-    }
-
-    pub fn parse_class_original(&mut self) -> AST {
-        let type_name:String = self.current_token.value.clone();
-        self.eat(Types::TOKEN_ID); 
-
-        let n:String = self.current_token.value.clone();
-        self.eat(Types::TOKEN_ID); 
-
-        self.eat(Types::TOKEN_EQUALS); 
-
-        if self.current_token.value != "new".to_string() {
-            panic!("New keyword must be used when instanciating a class instead got {:#?}", self.current_token.value);
-        }   
-    
-        // now onto Human(...args)
-        self.eat(Types::TOKEN_ID);
-
-        if self.current_token.value != type_name {
-            panic!("Type's do not match for class instantion {}", n.clone()); 
-        } 
-
-        self.eat(Types::TOKEN_ID); // eat the name
-        self.eat(Types::TOKEN_LPARENT); 
-
-        let mut args = Vec::new(); 
-
-        if self.current_token.kind != Types::TOKEN_RPARENT {
-            args.push(self.parse_term());
-
-            while self.current_token.kind == Types::TOKEN_COMMA {
-                self.eat(Types::TOKEN_COMMA);
-                args.push(self.parse_term());
-            }
-        }
-
-        self.eat(Types::TOKEN_RPARENT); 
-
-        let mut class_instance = AST::new(Ast_Type::AST_CLASS_INSTANCE);
-        class_instance.class_name = Some(type_name);
-        class_instance.variable_definition_variable_name = Some(n.clone()); 
-        class_instance.class_args = Some(args.clone()); 
-
-        class_instance.scope = Some(self.scope.clone()); 
-
-        self.scope.borrow_mut().add_variable_definition(class_instance.clone());
-
-        class_instance 
     }
 
     pub fn parse_variable(&mut self) -> AST {
@@ -1059,8 +1010,8 @@ impl<'a> Parser<'a> {
     }
 
     pub fn parse_equality(&mut self) -> AST {
-        let mut left = self.parse_comparison();
-
+        let mut left: AST = self.parse_comparison();
+        
         while matches!(self.current_token.kind, Types::TOKEN_EE | Types::TOKEN_NEQ) {
             let op = self.current_token.kind.clone();   
             self.eat(op.clone());
